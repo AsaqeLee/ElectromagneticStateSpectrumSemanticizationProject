@@ -1,0 +1,8 @@
+.spec-workflow
+data*
+docs
+notebooks
+tests
+
+.pytest_cache
+*__pycache__
