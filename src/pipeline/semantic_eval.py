@@ -15,10 +15,10 @@ if sys.platform == "win32":
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 try:  # pragma: no cover
-    from ..semantics.decode import decode_file
+    from ..semantics.decode_multi import decode_file_auto
 except ImportError:  # pragma: no cover
     sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
-    from semantics.decode import decode_file
+    from semantics.decode_multi import decode_file_auto
 
 
 def _load_reference(path: Path) -> tuple[np.ndarray, np.ndarray]:
@@ -84,7 +84,8 @@ def main() -> None:
     args = parser.parse_args()
 
     freq_mhz, ref_power = _load_reference(args.reference)
-    params, recovered = decode_file(args.semantic)
+    # 自动选择单区域或多区域解码
+    params, recovered = decode_file_auto(args.semantic)
     freq_semantic = _build_semantic_axis(params)
     _validate_alignment(freq_mhz, freq_semantic)
 

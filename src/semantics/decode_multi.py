@@ -1,9 +1,13 @@
-"""支持多区域的语义解码器（修复版）。
+"""支持多区域的语义解码器。
 
 当前 decode.py 的实现只支持单个连续区域 [start, end]。
-本模块提供多区域支持，利用 pos_edge/neg_edge 定义多个不连续区域。
+本模块提供多区域支持，利用 pos_edge/neg_edge 定义多个不连续区域，
+并提供自动模式 `decode_semantic_auto`。
 """
 from __future__ import annotations
+
+from pathlib import Path
+from typing import Tuple
 
 import numpy as np
 
@@ -81,7 +85,18 @@ def decode_semantic_auto(params: SemanticParams) -> np.ndarray:
     if len(params.pos_edge) <= 1:
         # 单区域：使用原始实现
         from .decode import decode_semantic
+
         return decode_semantic(params)
     else:
         # 多区域：使用新实现
         return decode_semantic_multi_region(params)
+
+
+def decode_file_auto(path: str | Path) -> Tuple[SemanticParams, np.ndarray]:
+    """从 JSON 文件加载语义参数，并自动选择单/多区域解码。"""
+
+    from .decode import load_semantic_file
+
+    params = load_semantic_file(path)
+    spectrum = decode_semantic_auto(params)
+    return params, spectrum

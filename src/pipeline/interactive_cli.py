@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""交互式 CLI：统一入口运行任务一/二/三，并适配常见异常情况
+"""交互式 CLI（实验/调试用）：统一入口运行任务一/二/三，并适配常见异常情况
 
 用法（示例）::
 
@@ -14,6 +14,9 @@
 本模块尽量复用现有 pipeline / signal / semantics 下的实现，仅提供：
 - 菜单式交互输入；
 - 针对路径不存在、格式错误、无数据等情况的中文错误提示。
+
+注意：正式场景推荐使用仓库根目录下的 `spectrum_cli.py` /
+`spectrum_batch.py` 作为官方 CLI 入口，本模块主要用于开发调试场景。
 """
 from __future__ import annotations
 

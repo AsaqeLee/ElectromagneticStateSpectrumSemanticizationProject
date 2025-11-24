@@ -140,6 +140,112 @@ class SemanticParams:
 
 
 @dataclass
+class JammerRegionV2:
+    """v2 语义编码中的单个干扰区域（参见 `semantic_encoding_requirements.md`）。
+
+    - start_bin/end_bin: 以 0 为起点的闭区间索引；
+    - jnr_db: 相对底噪的干扰功率（dB）。
+    """
+
+    start_bin: int
+    end_bin: int
+    jnr_db: float
+
+
+@dataclass
+class SemanticEncodingV2:
+    """v2 版本的语义编码结构，直接对应 docs/semantic_encoding_requirements.md 中的 JSON Schema。
+
+    字段说明：
+    - freq_min_mhz/freq_max_mhz: 频率范围 [MHz]；
+    - num_bins: 频谱离散点数；
+    - noise_floor_db: 底噪功率（dB）；
+    - jammer_regions: 多个不重叠干扰区域，每个区域用 start_bin/end_bin/jnr_db 描述。
+    """
+
+    freq_min_mhz: float
+    freq_max_mhz: float
+    num_bins: int
+    noise_floor_db: float
+    jammer_regions: List[JammerRegionV2] = field(default_factory=list)
+
+    def validate(self) -> None:
+        """按 v2 规范校验参数合法性。"""
+
+        if self.freq_max_mhz <= self.freq_min_mhz:
+            raise ValueError("freq_max_mhz 必须大于 freq_min_mhz")
+        if self.num_bins < 2:
+            raise ValueError("num_bins 必须 >= 2")
+        if not (-120.0 <= self.noise_floor_db <= -10.0):
+            # 不强制，但给出合理区间限制
+            raise ValueError(f"noise_floor_db 数值异常: {self.noise_floor_db}")
+
+        regions = self.jammer_regions
+        for i, r in enumerate(regions):
+            if r.start_bin < 0 or r.end_bin < 0:
+                raise ValueError(f"第 {i} 个区域索引不能为负: {r.start_bin}, {r.end_bin}")
+            if not (0 <= r.start_bin < r.end_bin < self.num_bins):
+                raise ValueError(
+                    f"第 {i} 个区域越界: start={r.start_bin}, end={r.end_bin}, "
+                    f"合法范围 [0, {self.num_bins - 1}]"
+                )
+            if r.jnr_db <= 0.0:
+                raise ValueError(f"第 {i} 个区域 jnr_db 必须 > 0, 当前 {r.jnr_db}")
+
+        # 区域按照 start_bin 排序且不重叠
+        for i in range(len(regions) - 1):
+            if regions[i].end_bin >= regions[i + 1].start_bin:
+                raise ValueError(
+                    f"区域 {i} 与 {i+1} 发生重叠: "
+                    f"[{regions[i].start_bin}, {regions[i].end_bin}] vs "
+                    f"[{regions[i+1].start_bin}, {regions[i+1].end_bin}]"
+                )
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "SemanticEncodingV2":
+        """从 v2 JSON 字典构造实例。"""
+
+        regions_data = data.get("jammer_regions", [])
+        regions: List[JammerRegionV2] = []
+        for entry in regions_data:
+            # 允许存在额外字段（如 comment），这里只关心必须字段
+            regions.append(
+                JammerRegionV2(
+                    start_bin=int(entry["start_bin"]),
+                    end_bin=int(entry["end_bin"]),
+                    jnr_db=float(entry["jnr_db"]),
+                )
+            )
+        obj = cls(
+            freq_min_mhz=float(data["freq_min_mhz"]),
+            freq_max_mhz=float(data["freq_max_mhz"]),
+            num_bins=int(data["num_bins"]),
+            noise_floor_db=float(data["noise_floor_db"]),
+            jammer_regions=regions,
+        )
+        obj.validate()
+        return obj
+
+    def to_dict(self) -> dict:
+        """转回 JSON 友好的 dict 结构。"""
+
+        return {
+            "freq_min_mhz": float(self.freq_min_mhz),
+            "freq_max_mhz": float(self.freq_max_mhz),
+            "num_bins": int(self.num_bins),
+            "noise_floor_db": float(self.noise_floor_db),
+            "jammer_regions": [
+                {
+                    "start_bin": int(r.start_bin),
+                    "end_bin": int(r.end_bin),
+                    "jnr_db": float(r.jnr_db),
+                }
+                for r in self.jammer_regions
+            ],
+        }
+
+
+@dataclass
 class IQData:
     """IQ 数据包装结构，包含元数据便于频谱计算。"""
 
