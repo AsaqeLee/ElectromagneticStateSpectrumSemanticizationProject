@@ -1,9 +1,9 @@
-"""多分片 IQ 频谱拼接 CLI：从指定文件夹中自动识别 *.bin 采样文件，并拼接宽带功率谱。
+"""??? IQ ???? CLI:??????????? *.bin ????,?????????
 
-设计目标：
-- 支持任意数量的分片（不仅是 2 段，13 段也可以）；
-- 仅依赖文件名中的中心频率与采样率（如 comb_130MHz_204.8MHz_xxx.bin）；
-- 当文件夹内分片不完整时，只拼接已有频段，其余频率范围保持为噪声底。
+????:
+- ?????????(??? 2 ?,13 ????);
+- ????????????????(? comb_130MHz_204.8MHz_xxx.bin);
+- ???????????,???????,?????????????
 """
 from __future__ import annotations
 
@@ -16,7 +16,14 @@ from typing import List, Tuple
 import matplotlib.pyplot as plt
 import numpy as np
 
-try:  # pragma: no cover - 兼容直接运行脚本
+# Fix Windows console encoding
+if sys.platform == "win32":
+    import io
+
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+
+try:  # pragma: no cover - ????????
     from ..core.config import DEFAULT_WINDOW_CENTERS_MHZ
     from ..core.schemas import IQData, SamplingConfig
     from ..signal.spectrum import compute_power_spectrum
@@ -34,9 +41,9 @@ COMB_PATTERN = re.compile(
 
 
 def parse_comb_filename(path: Path) -> Tuple[float, float] | None:
-    """从文件名推断中心频率与采样率（MHz）。
+    """??????????????(MHz)?
 
-    例如：comb_130MHz_204.8MHz_11h01m58s.bin → (130.0, 204.8)
+    ??:comb_130MHz_204.8MHz_11h01m58s.bin  (130.0, 204.8)
     """
 
     m = COMB_PATTERN.match(path.name)
@@ -48,7 +55,7 @@ def parse_comb_filename(path: Path) -> Tuple[float, float] | None:
 
 
 def load_int16_iq(path: Path) -> np.ndarray:
-    """按 int16 I/Q 交织格式读取 .bin 文件。"""
+    """? int16 I/Q ?????? .bin ???"""
 
     raw = np.fromfile(path, dtype=np.int16)
     if raw.size % 2 != 0:
@@ -59,74 +66,118 @@ def load_int16_iq(path: Path) -> np.ndarray:
 
 
 def build_global_axis(freq_list: List[np.ndarray]) -> Tuple[np.ndarray, float]:
-    """根据各分片频轴构造统一频率轴。"""
+    """???????????????
+
+    ?????????????????:
+    - ????????????,??????/????;
+    - ?? `np.arange` ???????,?????????,
+      ???????????????????????
+    """
 
     if not freq_list:
-        raise RuntimeError("没有可用频轴，无法拼接")
+        raise RuntimeError("??????,????")
+    if any(arr.size < 2 for arr in freq_list):
+        raise RuntimeError("????????,????????")
     step = float(freq_list[0][1] - freq_list[0][0])
     f_min = min(float(f[0]) for f in freq_list)
     f_max = max(float(f[-1]) for f in freq_list)
-    # 加半个步长避免浮点误差导致右端缺 bin
+    # ???????????????? bin
     axis = np.arange(f_min, f_max + step / 2.0, step, dtype=float)
     return axis, step
 
 
+def _validate_freq_axes(freq_list: List[np.ndarray], sample_rates: List[float]) -> None:
+    """??:????????????????????,???????
+
+    ?????????,?????????"????":
+    ?????????????????,?????????
+    """
+
+    base_step = float(freq_list[0][1] - freq_list[0][0])
+    base_sr = sample_rates[0]
+    for idx, freq in enumerate(freq_list):
+        if not np.all(np.diff(freq) > 0):
+            raise SystemExit(f"?? {idx} ??????,????????????")
+        step = float(freq[1] - freq[0])
+        if not np.isclose(step, base_step, rtol=1e-3, atol=1e-6):
+            raise SystemExit(f"?? {idx} ???? {step:.6f} MHz ??? {base_step:.6f} MHz ???,??????")
+        if not np.isclose(sample_rates[idx], base_sr, rtol=1e-4):
+            raise SystemExit(f"?? {idx} ??? {sample_rates[idx]:.3f} Hz ??? {base_sr:.3f} Hz ???,??????")
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="多分片 IQ 频谱拼接")
-    parser.add_argument("--input-dir", type=Path, required=True, help="包含 comb_*MHz_*.bin 的目录")
-    parser.add_argument("--fft-size", type=int, default=262144, help="FFT 点数")
-    parser.add_argument("--pattern", type=str, default="*.bin", help="文件匹配模式，默认 *.bin")
+    parser = argparse.ArgumentParser(description="??? IQ ????")
+    parser.add_argument(
+        "--input-dir",
+        type=Path,
+        default=Path("data_segment"),
+        help="?? comb_*MHz_*.bin ???,?? data_segment",
+    )
+    parser.add_argument("--fft-size", type=int, default=262144, help="FFT ??")
+    parser.add_argument("--pattern", type=str, default="*.bin", help="??????,?? *.bin")
     parser.add_argument(
         "--ignore-names",
         action="store_true",
-        help="忽略文件名中的中心频率，按默认中心频率列表 DEFAULT_WINDOW_CENTERS_MHZ 顺序分配",
+        help="???????????,????????? DEFAULT_WINDOW_CENTERS_MHZ ????",
     )
     parser.add_argument(
         "--sample-rate",
         type=float,
         default=204.8e6,
-        help="当 --ignore-names 为真时使用的采样率 Hz（所有分片共用），默认 204.8e6",
+        help="? --ignore-names ????????? Hz(??????),?? 204.8e6",
     )
     parser.add_argument(
         "--output-npz",
         type=Path,
         default=Path("data/stitched_spectrum.npz"),
-        help="输出 npz 路径（包含 freq_mhz 与 power_db）",
+        help="?? npz ??(?? freq_mhz ? power_db)",
     )
     parser.add_argument(
         "--output-png",
         type=Path,
         default=Path("data/stitched_spectrum.png"),
-        help="输出功率谱 PNG 路径",
+        help="????? PNG ??",
     )
     parser.add_argument(
         "--min-freq",
         type=float,
         default=30.0,
-        help="裁剪显示的最低频率 MHz（默认 30）",
+        help="????????? MHz(?? 30)",
     )
     parser.add_argument(
         "--max-freq",
         type=float,
         default=2500.0,
-        help="裁剪显示的最高频率 MHz（默认 2500）",
+        help="????????? MHz(?? 2500)",
     )
     args = parser.parse_args()
 
     input_dir = args.input_dir
     if not input_dir.is_dir():
-        raise SystemExit(f"input-dir 不是有效目录: {input_dir}")
+        raise SystemExit(f"input-dir ??????: {input_dir}")
 
     files = sorted(input_dir.glob(args.pattern))
     segments_freq: List[np.ndarray] = []
     segments_power: List[np.ndarray] = []
+    sample_rates: List[float] = []
 
     print(f"scan dir {input_dir}, pattern {args.pattern}")
     if args.ignore_names:
         if not files:
             raise SystemExit("no files found for stitching")
-        if len(files) > len(DEFAULT_WINDOW_CENTERS_MHZ):
-            raise SystemExit("more files than default window centers; please reduce or disable --ignore-names")
+        expected = len(DEFAULT_WINDOW_CENTERS_MHZ)
+        if len(files) > expected:
+            raise SystemExit(
+                f"--ignore-names ???? {expected} ?,?? {len(files)} ?;??????,???????????????"
+            )
+        if len(files) < expected:
+            # ????,files ????? 13 ??? .bin ???
+            # ???? DEFAULT_WINDOW_CENTERS_MHZ ?????,??
+            # ????????,??????????????
+            print(
+                f"[WARN] 只找到 {len(files)} ? .bin ??,?? {expected} ?;"
+                "将按文件排序依次绑定较低频率窗口, 默认缺少高频端窗口"
+            )
         for idx, path in enumerate(files):
             center_mhz = DEFAULT_WINDOW_CENTERS_MHZ[idx]
             center_hz = center_mhz * 1e6
@@ -139,6 +190,7 @@ def main() -> None:
             freq_mhz, power_db = compute_power_spectrum(iq, cfg)
             segments_freq.append(freq_mhz)
             segments_power.append(power_db)
+            sample_rates.append(fs_hz)
     else:
         for path in files:
             info = parse_comb_filename(path)
@@ -156,15 +208,18 @@ def main() -> None:
             freq_mhz, power_db = compute_power_spectrum(iq, cfg)
             segments_freq.append(freq_mhz)
             segments_power.append(power_db)
+            sample_rates.append(fs_hz)
 
     if not segments_freq:
-        raise SystemExit("未找到任何符合命名规则的 comb_*MHz_*.bin 文件，无法拼接")
+        raise SystemExit("???????????? comb_*MHz_*.bin ??,????")
 
-    # 构造全局频率轴并初始化功率为噪声底
+    _validate_freq_axes(segments_freq, sample_rates)
+
+    # ?????????????????
     global_axis, step = build_global_axis(segments_freq)
     global_power = np.full_like(global_axis, -180.0, dtype=float)
 
-    # 对齐各分片频轴到全局频轴，并使用最大值策略合并
+    # ????????????,??????????
     for freq_mhz, power_db in zip(segments_freq, segments_power):
         idx = np.round((freq_mhz - global_axis[0]) / step).astype(int)
         valid = (idx >= 0) & (idx < global_power.size)
@@ -173,7 +228,7 @@ def main() -> None:
         current = global_power[idx]
         global_power[idx] = np.maximum(current, seg)
 
-    # 裁剪到指定频率范围（用于展示）
+    # ?????????(????)
     mask = (global_axis >= args.min_freq) & (global_axis <= args.max_freq)
     freq_cropped = global_axis[mask]
     power_cropped = global_power[mask]
@@ -197,3 +252,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

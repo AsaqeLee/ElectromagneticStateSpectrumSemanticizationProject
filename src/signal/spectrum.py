@@ -25,7 +25,13 @@ def _prepare_samples(samples: np.ndarray, fft_size: int) -> np.ndarray:
 
 
 def compute_power_spectrum(iq: IQData, cfg: SamplingConfig, window: str = "hann") -> Tuple[np.ndarray, np.ndarray]:
-    """计算功率谱密度（dB）。"""
+    """计算功率谱密度（dB）。
+
+    约定：
+    - 使用与采样配置一致的 `fft_size`，不足补零、超出截断；
+    - 频轴通过 `fftshift` 对齐，使 0 Hz 附近位于中间，更便于与语义频谱对齐；
+    - 返回值中的功率已转换为 dB 标度，适合在后续拼接与误差评估中直接使用。
+    """
 
     freq_axis = make_frequency_axis(cfg)
     samples = _prepare_samples(iq.samples, cfg.fft_size)

@@ -1,8 +1,16 @@
 .spec-workflow
+.serena
+.snow
 data*
-docs
+docs/exp
+docs/python
+docs/tasks-raw.txt
 notebooks
 tests
 
 .pytest_cache
 *__pycache__
+
+jam.m
+nul
+

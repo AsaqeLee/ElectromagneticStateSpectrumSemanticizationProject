@@ -7,6 +7,11 @@ from typing import List, Optional, Sequence
 import numpy as np
 
 
+# 语义频谱默认覆盖范围与分辨率（可通过 SemanticParams 覆盖）
+DEFAULT_SEMANTIC_FREQ_MIN_MHZ = 30.0
+DEFAULT_SEMANTIC_FREQ_MAX_MHZ = 2500.0
+
+
 @dataclass
 class SamplingConfig:
     """采样与 FFT 相关配置。"""
@@ -34,11 +39,17 @@ class BandConfig:
 
 @dataclass
 class SemanticParams:
-    """语义参数，根据 `频谱语义化表征及频谱恢复.md` 的字段约定。
+    """语义参数，根据 `频谱语义化表征及频谱恢复.md` 的字段约定，并结合 30–2500 MHz 场景进行约束。
 
-    - start/end: 频谱索引区间（包含端点），用于标示干扰落区。
-    - fenbianlv: 频谱长度或分辨率，确保 start/end 不越界。
-    - sinr: 干扰相对底噪的能量（dB），长度应与 (end - start + 1) 对齐。
+    字段说明（保持原有拼音命名以兼容现有数据）：
+    - yonghu: 用户ID (user_id)
+    - youwu: 是否有干扰 0/1 (has_jammer)
+    - menxian: 底噪功率 dB (noise_floor_db)
+    - fenbianlv: 频谱离散点个数 (num_bins)
+    - start/end: 干扰区域索引范围
+    - sinr: 干扰相对底噪的能量（dB）
+    - pos_edge/neg_edge: 正/负边缘索引列表
+    - freq_min_mhz/freq_max_mhz: 频谱覆盖范围
     """
 
     yonghu: int
@@ -50,6 +61,33 @@ class SemanticParams:
     end: int
     fenbianlv: int
     sinr: np.ndarray = field(repr=False)
+    freq_min_mhz: float = DEFAULT_SEMANTIC_FREQ_MIN_MHZ
+    freq_max_mhz: float = DEFAULT_SEMANTIC_FREQ_MAX_MHZ
+
+    # 英文别名属性（推荐使用）
+    @property
+    def user_id(self) -> int:
+        return self.yonghu
+
+    @property
+    def has_jammer(self) -> bool:
+        return self.youwu == 1
+
+    @property
+    def noise_floor_db(self) -> float:
+        return self.menxian
+
+    @property
+    def num_bins(self) -> int:
+        return self.fenbianlv
+
+    @property
+    def resolution_mhz(self) -> float:
+        """语义频谱的频率分辨率（MHz）。"""
+
+        if self.fenbianlv <= 1:
+            return self.freq_max_mhz - self.freq_min_mhz
+        return (self.freq_max_mhz - self.freq_min_mhz) / float(self.fenbianlv - 1)
 
     def validate(self) -> None:
         if self.start < 0 or self.end < 0:
@@ -58,6 +96,10 @@ class SemanticParams:
             raise ValueError("start 必须小于等于 end")
         if self.fenbianlv <= self.end:
             raise ValueError("fenbianlv 必须大于 end，确保索引不越界")
+        if self.fenbianlv <= 0:
+            raise ValueError("fenbianlv 必须为正")
+        if self.freq_max_mhz <= self.freq_min_mhz:
+            raise ValueError("freq_max_mhz 必须大于 freq_min_mhz")
         if self.sinr.size == 0:
             raise ValueError("sinr 不能为空")
         expected = self.end - self.start + 1
@@ -77,6 +119,8 @@ class SemanticParams:
             end=int(data["end"]),
             fenbianlv=int(data["fenbianlv"]),
             sinr=sinr,
+            freq_min_mhz=float(data.get("freq_min_mhz", DEFAULT_SEMANTIC_FREQ_MIN_MHZ)),
+            freq_max_mhz=float(data.get("freq_max_mhz", DEFAULT_SEMANTIC_FREQ_MAX_MHZ)),
         )
 
     def to_dict(self) -> dict:
@@ -90,6 +134,8 @@ class SemanticParams:
             "end": self.end,
             "fenbianlv": self.fenbianlv,
             "sinr": self.sinr.tolist(),
+            "freq_min_mhz": self.freq_min_mhz,
+            "freq_max_mhz": self.freq_max_mhz,
         }
 
 

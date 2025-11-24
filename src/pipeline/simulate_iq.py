@@ -23,6 +23,8 @@ except ImportError:  # pragma: no cover
 
 
 def _generate_carriers(num_samples: int, sample_rate: float, freqs_mhz: Sequence[float]) -> np.ndarray:
+    """在给定采样率和时长下生成多载波窄带信号。"""
+
     t = np.arange(num_samples) / sample_rate
     signal = np.zeros(num_samples, dtype=np.complex128)
     for idx, freq_mhz in enumerate(freqs_mhz):
@@ -34,6 +36,11 @@ def _generate_carriers(num_samples: int, sample_rate: float, freqs_mhz: Sequence
 
 
 def simulate(cfg: ProjectConfig, duration_ms: float, carriers: Sequence[float], noise_db: float) -> np.ndarray:
+    """按指定时长与载波列表生成含噪仿真 IQ。
+
+    - 噪声为复高斯白噪声，幅度由 noise_db 控制；
+    - 载波频率由 `carriers` 指定，中心频率相对于 cfg.sampling.center_freq_hz。
+    """
     num_samples = int(cfg.sampling.sample_rate_hz * duration_ms / 1000.0)
     base_noise = (10 ** (noise_db / 20.0)) / np.sqrt(2)
     noise = (np.random.randn(num_samples) + 1j * np.random.randn(num_samples)) * base_noise
