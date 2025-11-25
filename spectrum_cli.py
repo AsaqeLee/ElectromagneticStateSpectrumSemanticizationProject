@@ -41,7 +41,7 @@ from src.signal.stitcher import (
     StitchMode,
     load_segment_from_npz,
 )
-from src.pipeline.stitch_real_data import stitch_from_bin_directory
+from src.pipeline.stitch.stitch_real_data import stitch_from_bin_directory
 from src.io.reader import BinDataType
 from src.semantics.decode import decode_semantic, load_semantic_file
 from src.core.schemas import SemanticParams

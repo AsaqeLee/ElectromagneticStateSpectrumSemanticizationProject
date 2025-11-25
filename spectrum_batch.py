@@ -30,7 +30,7 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from src.signal.spectrum_composer import SpectrumComposerConfig, JammerSpec, compose_spectrum
 from src.signal.stitcher import StitchMode
-from src.pipeline.stitch_real_data import stitch_from_bin_directory
+from src.pipeline.stitch.stitch_real_data import stitch_from_bin_directory
 from src.io.reader import BinDataType
 from src.semantics.decode import load_semantic_file
 from src.semantics.decode_multi import decode_semantic_auto
