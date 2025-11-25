@@ -1,213 +1,285 @@
 # 电磁态频谱语义化工程 - CLI 使用指南
 
-## 快速开始
+本指南面向**使用者**，说明如何通过命令行 CLI 完成三大任务：
 
-### 启动交互式CLI
+1. 干扰信号功率谱合成（任务一）；  
+2. 频谱分段拼接（任务二）；  
+3. 语义参数频谱恢复（任务三，支持 v1/v2）。  
+
+工程提供两类 CLI：
+
+- `spectrum_cli.py`：交互式 CLI，适合人工调参与可视化；  
+- `spectrum_batch.py`：批处理 CLI，适合脚本/自动化调用。  
+
+---
+
+## 一、交互式 CLI：`spectrum_cli.py`
+
+### 1.1 启动
+
 ```bash
 python spectrum_cli.py
 ```
 
----
+你会看到类似主菜单：
 
-## 功能说明
+```text
+【主菜单】
+  1. 任务一：干扰功率谱合成 (30-2500 MHz)
+  2. 任务二：频谱分段拼接
+  3. 任务三：语义参数频谱恢复
+  4. 查看使用指南
+  5. 退出
+```
 
-### 任务一：合成干扰功率谱
-**目的**：在 30-2500 MHz 频段内任意组合六类干扰信号生成功率谱
+### 1.2 任务一：干扰功率谱合成
+
+**目的**：在 30–2500 MHz 频段内任意组合六类干扰信号，生成宽带功率谱。  
 
 **支持的干扰类型**：
-- `noise_fm` - 噪声调频干扰
-- `single_tone` - 单音干扰
-- `multi_tone` - 多音干扰
-- `comb` - 梳状谱干扰
-- `partial_band_noise` - 部分带宽噪声干扰
-- `sweep` - 扫频干扰
+- `noise_fm` - 噪声调频干扰  
+- `single_tone` - 单音干扰  
+- `multi_tone` - 多音干扰  
+- `comb` - 梳状谱干扰  
+- `partial_band_noise` - 部分带宽噪声干扰  
+- `sweep` - 扫频干扰  
 
-**交互流程**：
-1. 设置频段范围（默认 30-2500 MHz）
-2. 设置频率分辨率（默认 1 MHz）
-3. 设置底噪功率（默认 -120 dB）
-4. 添加多个干扰（类型、中心频率、JNR）
-5. 生成并保存功率谱
+**交互流程概览**：
+1. 设置频段范围（默认 `30–2500 MHz`）；  
+2. 设置频率分辨率（默认 `1 MHz`）；  
+3. 设置底噪功率（默认 `-120 dB`）；  
+4. 添加一个或多个干扰（类型、中心频率、JNR）；  
+5. 生成功率谱并选择是否保存为：
+   - `.npz`（`freq_mhz`, `power_db`）；
+   - `.png` 频谱图；
+   - （可选）干扰配置 JSON。
 
-**输出文件**：
-- `composed_spectrum.npz` - 频谱数据（freq_mhz, power_db）
-- `jammer_config.json` - 干扰配置记录
+输出文件示例：
 
----
+- `composed_spectrum.npz` – 频谱数据（`freq_mhz`, `power_db`）；  
+- `jammer_config.json` – 干扰配置记录；  
+- `composed_spectrum.png` – 可视化图像。  
 
-### 任务二：拼接频谱分段
-**目的**：将多个 200MHz 频谱分段拼接为完整宽带频谱
+### 1.3 任务二：频谱分段拼接
 
-**输入要求**：
-- npz 文件必须包含：`freq_mhz`, `power_db`, `center_freq_mhz`, `bandwidth_mhz`
-- 可使用 `demo_all_tasks.py` 任务一生成的数据进行测试
+**目的**：将多个 200 MHz 频谱分段拼接为完整宽带频谱。  
 
-**拼接模式**：
-- **MAX** - 取最大值（适合干扰检测场景）
-- **MEAN** - 简单平均（降低噪声）
-- **WEIGHTED_MEAN** - 加权平均（中心频率权重高）
+典型输入：来自任务一/真实数据的 `.npz` 分段文件或 `.bin` 分段文件。  
 
-**交互流程**：
-1. 逐个加载频谱分段 npz 文件
-2. 选择拼接模式
-3. 设置未覆盖区域填充值
-4. 执行拼接并保存
+交互流程（典型）：
 
-**输出文件**：
-- `stitched_spectrum.npz` - 拼接后的频谱和覆盖图
+1. 逐个选择/加载频谱分段（`.npz`）；  
+2. 选择拼接模式：  
+   - `MAX` – 取最大值（适合干扰检测）；  
+   - `MEAN` – 简单平均（降低噪声）；  
+   - `WEIGHTED_MEAN` – 加权平均（窗口中心权重大）；  
+3. 设置未覆盖区域填充值（如 `-180 dB`）；  
+4. 执行拼接并保存。  
 
----
+输出文件示例：
 
-### 任务三：语义参数恢复频谱
-**目的**：从语义化参数重建功率谱，大幅降低数据传输量
+- `stitched_spectrum.npz` – 拼接后的宽带频谱和覆盖图；  
+- `stitched_spectrum.png` – 频谱图像。  
 
-**语义参数说明**：
-| 字段 | 含义 | 示例 |
-|------|------|------|
-| yonghu | 用户ID | 1 |
-| youwu | 有无干扰 (0/1) | 1 |
-| menxian | 底噪功率 (dB) | -120.0 |
-| start | 干扰起始索引 | 470 |
-| end | 干扰结束索引 | 1470 |
-| fenbianlv | 频谱总点数 | 2471 |
-| sinr | 干扰相对底噪功率 (dB) | [15.0] |
-| pos_edge | 正边缘索引列表 | [470, 970] |
-| neg_edge | 负边缘索引列表 | [720, 1470] |
+> 对真实 `.bin` 数据的拼接，更推荐使用 `spectrum_batch.py stitch` 或 `src/pipeline/stitch_real_data.py`，交互式 CLI 适合快速试验/教学演示。
 
-**数据压缩效果**：
-- 原始 IQ 数据: ~122880 字节
-- 功率谱数据: ~24000 字节
-- **语义参数: ~2768 字节** （压缩比 44:1）
+### 1.4 任务三：语义参数频谱恢复
 
-**交互流程**：
-1. 选择输入方式：
-   - 从 JSON 文件加载
-   - 手动输入参数
-2. 验证并解码语义参数
-3. 恢复功率谱并保存
+**目的**：从语义化参数恢复功率谱，实现**“语义压缩 → 本地重构”**。  
 
-**输出文件**：
-- `recovered_spectrum.npz` - 恢复的频谱
-- `semantic_params.json` - 语义参数记录
+CLI 支持两种语义格式：
+
+- v1：`SemanticParams`（单区域 + pos_edge/neg_edge 边缘列表）；  
+- v2：`SemanticEncodingV2`（多区域 `jammer_regions`）。  
+
+在交互式任务三中，典型流程是：
+
+1. 选择语义格式（v1/v2）（如果 CLI 已支持该开关）；  
+2. 指定语义 JSON 文件；  
+3. （可选）指定参考谱 `.npz` 用于对比；  
+4. 恢复功率谱并保存结果（`.npz` + `.png`）。  
+
+> 目前交互式 CLI 默认使用 v1 格式；v2 推荐通过 batch CLI 或 pipeline 调用，详见下一节。
 
 ---
 
-## 关键修复说明
+## 二、批处理 CLI：`spectrum_batch.py`
 
-### ✅ 任务一修复：Nyquist 采样定理
-**问题**：125MHz 采样率无法直接生成 500MHz+ 信号（违反 Nyquist 定理）
+批处理 CLI 提供四个子命令：
 
-**修复方案**：
-```python
-# 错误做法（原代码）
-iq = np.exp(1j * 2.0 * np.pi * 500e6 * t)  # 超过采样率一半，产生混叠
+- `compose` – 干扰功率谱合成（任务一）；  
+- `stitch` – 频谱分段拼接（任务二）；  
+- `decode` – v1（`SemanticParams`）语义恢复；  
+- `decode-v2` – v2（`SemanticEncodingV2`，`jammer_regions`）语义恢复。  
 
-# 正确做法（修复后）
-iq_baseband = np.exp(1j * 2.0 * np.pi * 0.0 * t)  # 基带生成
-spectrum = fft(iq_baseband)  # 计算基带频谱形状
-freq_axis = freq_axis_baseband + 500e6  # 频域平移到目标频率
-```
+### 2.1 `compose` - 合成干扰功率谱
 
-**文件位置**：`src/signal/spectrum_composer.py:52-90`
-
----
-
-### ✅ 任务二修复：浮点精度问题
-**问题**：`round((freq - f0) / step)` 累积浮点误差
-
-**修复方案**：
-```python
-# 错误做法
-idx = np.round((seg.freq_mhz - global_axis[0]) / step).astype(int)
-
-# 正确做法
-idx = np.searchsorted(global_axis, seg.freq_mhz)  # 二分查找，避免浮点运算
-```
-
-**文件位置**：`src/signal/stitcher.py:157-169`
-
----
-
-### ✅ 任务三修复：边缘增强过度
-**问题**：边缘跃变量等于干扰功率（15dB），导致 150dB 误差
-
-**修复方案**：
-```python
-# 错误做法
-edge_delta = abs(boost)  # 直接用干扰功率
-
-# 正确做法
-edge_boost = min(delta * 0.1, 5.0)  # 限制在 5dB 以内
-```
-
-**修复效果**：
-- MAE: 23.25 dB → **0.00 dB**
-- MAX: 150.16 dB → **1.50 dB**
-
-**文件位置**：`src/semantics/decode.py:13-26`
-
----
-
-## 运行完整演示
-
-### 批处理模式
 ```bash
-python demo_all_tasks.py
+python spectrum_batch.py compose \
+  --jammer single_tone:500:20 \
+  --jammer sweep:1200:18 \
+  -o data/composed.npz \
+  --plot data/composed.png
 ```
 
-**输出目录**：`data/demo_results/`
-- `task1_composed_spectrum.png` - 合成的干扰频谱
-- `task2_stitched_spectrum.png` - 拼接的频谱
-- `task3_semantic_recovery.png` - 语义恢复对比图
+关键参数：
 
----
+- `--jammer type:freq:jnr`：干扰配置，可多次出现；  
+- `--freq-min/--freq-max`：频段范围（默认 30–2500 MHz）；  
+- `--resolution`：频率分辨率（默认 1 MHz）；  
+- `--noise-floor`：底噪功率（默认 -120 dB）；  
+- `--seed`：随机种子（可选，便于复现）；  
+- `--show`：生成图后直接弹出窗口；  
+- `--plot`：保存 PNG 图路径。  
 
-## 常见问题
+输出：  
+- `-o/--output` 指定的 `.npz` 文件（包含 `freq_mhz` 和 `power_db`）；  
+- 可选 `--plot` 指定的 `.png` 文件。  
 
-### Q1: 任务一生成的频谱为什么看起来不连续？
-**A**: 每个干扰只覆盖其带宽范围（例如单音干扰 24kHz），其余部分是底噪。这是正常的。
+### 2.2 `stitch` - 频谱分段拼接
 
-### Q2: 任务二拼接时提示"频率步长不一致"？
-**A**: 确保所有分段使用相同的频率分辨率。可在生成时统一 `resolution_mhz` 参数。
-
-### Q3: 任务三恢复误差较大？
-**A**: 检查：
-1. `start/end` 索引是否正确对应频率范围
-2. `sinr` 数组长度是否匹配 `end - start + 1`
-3. `pos_edge/neg_edge` 是否超出 `[0, fenbianlv)` 范围
-
----
-
-## 技术架构
-
-```
-spectrum_cli.py               # 交互式CLI入口
-demo_all_tasks.py             # 批处理演示
-
-src/
-├── signal/
-│   ├── jammers.py            # 六类干扰生成（基带IQ）
-│   ├── spectrum_composer.py  # 任务一：宽带频谱合成
-│   └── stitcher.py           # 任务二：频谱拼接
-├── semantics/
-│   └── decode.py             # 任务三：语义解码
-└── core/
-    └── schemas.py            # 数据结构定义
+```bash
+python spectrum_batch.py stitch \
+  --input-dir data_segment \
+  --pattern "*.bin" \
+  --dtype int16 \
+  --mode max \
+  --fft-size 262144 \
+  -o data/stitched_30_2500.npz \
+  --plot data/stitched_30_2500.png
 ```
 
+参数说明：
+
+- `--input-dir`：包含分段 `.bin` 文件的目录；  
+- `--pattern`：文件匹配模式（默认 `*.bin`）；  
+- `--dtype`：数据类型（`int16/int8/float32/complex64`）；  
+- `--mode`：拼接模式（`max/mean/weighted_mean`）；  
+- `--fft-size`：FFT 点数（默认 8192/262144）；  
+- `-o/--output`：输出 `.npz`（含 `freq_mhz`/`power_db`/`coverage_map`）；  
+- `--plot`：输出 PNG 频谱图；  
+- `--show`：是否在屏幕上显示图像。  
+
+> `stitch` 内部调用 `src/pipeline/stitch_real_data.stitch_from_bin_directory`，后者基于 `src/io.reader.load_bin_segments` 统一处理 `.bin` 文件。  
+> 文件命名建议采用类似 `single_130MHz_204.8MHz_11h14m22s.bin` 的格式，以便自动推断中心频率/带宽。
+
+### 2.3 `decode` - 语义恢复（v1 / 自动多区域）
+
+```bash
+python spectrum_batch.py decode \
+  --input data/demo_semantic_v1.json \
+  -o data/recovered_v1.npz \
+  --plot data/recovered_v1.png
+```
+
+行为说明：
+
+- `--input`：v1 语义 JSON（字段结构与 `SemanticParams` 一致）；  
+- 内部使用 `decode_semantic_auto`：  
+  - 若 `pos_edge` 为空/单个 → 使用单区域 `decode_semantic`；  
+  - 若 `pos_edge` 含多元素 → 使用 `decode_semantic_multi_region` 支持多区域；  
+- `-o/--output`：输出恢复谱，npz 中包含 `freq_mhz` 和 `power_db`；  
+- `--plot`/`--show`：可选图像输出/展示。  
+
+### 2.4 `decode-v2` - 语义恢复（v2 / jammer_regions）
+
+```bash
+python spectrum_batch.py decode-v2 \
+  --input data_semantic/semantic_case01.json \
+  -o data/recovered_v2_case01.npz \
+  --plot data/recovered_v2_case01.png
+```
+
+参数说明：
+
+- `--input`：v2 语义 JSON，结构示例：
+
+  ```json
+  {
+    "freq_min_mhz": 30.0,
+    "freq_max_mhz": 2500.0,
+    "num_bins": 2471,
+    "noise_floor_db": -80.0,
+    "jammer_regions": [
+      {"start_bin": 50, "end_bin": 90, "jnr_db": 25.0},
+      {"start_bin": 470, "end_bin": 490, "jnr_db": 20.0}
+    ]
+  }
+  ```
+
+- v2 解码使用 `decode_semantic_v2`：  
+  - 初始化长度为 `num_bins` 的谱线为 `noise_floor_db`；  
+  - 对每个区域 `[start_bin, end_bin]` 设置为 `noise_floor_db + jnr_db`。  
+
+输出：  
+- `.npz` – `freq_mhz` / `power_db`；  
+- `.png` – 直观频谱图（如指定 `--plot`）。  
+
 ---
 
-## Linus 品味评级
+## 三、完整示例：从拼接到语义评估
 
-### ✅ 好品味
-- **数据结构优先**：所有模块以数据类为中心设计
-- **消除特殊情况**：频域平移统一处理所有频率
-- **零破坏性**：所有修复向后兼容
+1. **拼接参考谱**：
 
-### ⚠️ 需改进
-- `_apply_edges` 仍然是个补丁，应重新设计语义编码逻辑
-- 任务二的模拟数据应替换为实际 .bin 读取
+   ```bash
+   python spectrum_batch.py stitch \
+     --input-dir data_segment \
+     --pattern "*.bin" \
+     --dtype int16 \
+     --mode max \
+     --fft-size 262144 \
+     -o data/stitched_30_2500.npz
+   ```
+
+2. **使用 v1 语义恢复并评估**：
+
+   ```bash
+   python spectrum_batch.py decode \
+     --input data/demo_semantic_v1.json \
+     -o data/recovered_v1.npz
+
+   python -m src.pipeline.semantic_eval \
+     --reference data/stitched_30_2500.npz \
+     --semantic data/demo_semantic_v1.json \
+     --report data/semantic_eval_v1.json
+   ```
+
+3. **使用 v2 语义恢复并评估**：
+
+   ```bash
+   # 生成 v2 测试语义
+   python -m src.pipeline.semantic_generate --num-samples 10
+
+   python spectrum_batch.py decode-v2 \
+     --input data_semantic/semantic_case01.json \
+     -o data/recovered_v2_case01.npz
+
+   python -m src.pipeline.semantic_eval_v2 \
+     --reference data/stitched_30_2500.npz \
+     --semantic data_semantic/semantic_case01.json \
+     --report data/semantic_eval_v2_case01.json
+   ```
 
 ---
 
-**作者备注**：代码现在能运行且结果正确，但仍有优化空间。记住："Perfect is the enemy of good"。先让它工作，再让它优雅。
+## 四、常见问题
+
+**Q1: `stitch` 提示“未找到匹配文件”？**  
+A: 检查 `--input-dir` 和 `--pattern`，确认目录存在且文件后缀/命名符合预期。此外，`.bin` 文件需要是交织 I/Q 格式（详见 `src/io/reader.py`）。  
+
+**Q2: `decode` 和 `decode-v2` 有什么区别？**  
+A:  
+- `decode` 接收 v1 格式的语义 JSON（`SemanticParams`），并自动选择单/多区域解码；  
+- `decode-v2` 接收 v2 格式（`SemanticEncodingV2` + `jammer_regions`），适合多区域、稀疏场景，是推荐的新格式。  
+
+**Q3: 为何语义恢复与参考谱对不上？**  
+A: 请检查：  
+1. 参考谱的频率范围/分辨率是否与语义参数一致（`semantic_eval(_v2)` 会做严格校验）；  
+2. `num_bins` 与 `fenbianlv`、`start/end`、`start_bin/end_bin` 的关系是否合理；  
+3. 对于 v1，多区域参数应使用 `pos_edge/neg_edge` 成对定义。  
+
+如需更细节的说明和示例，请参考：  
+- `USAGE_GUIDE.md` – Python/pipeline 使用指南；  
+- `docs/semantic_encoding_requirements.md` – v2 语义规范；  
+- `FIXES_SUMMARY.md` – 核心修复点与设计决策。  
+

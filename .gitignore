@@ -13,5 +13,4 @@ tests
 
 jam.m
 nul
-*.md
 !README.md

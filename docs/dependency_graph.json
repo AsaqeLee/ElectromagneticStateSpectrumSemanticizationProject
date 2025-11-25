@@ -1,0 +1,574 @@
+{
+  "nodes": [
+    {
+      "id": "analyze_dependencies.py",
+      "label": "analyze_dependencies.py",
+      "module": "script",
+      "full_path": "analyze_dependencies.py"
+    },
+    {
+      "id": "analyze_real_iq.py",
+      "label": "analyze_real_iq.py",
+      "module": "script",
+      "full_path": "analyze_real_iq.py"
+    },
+    {
+      "id": "analyze_real_spectrum.py",
+      "label": "analyze_real_spectrum.py",
+      "module": "script",
+      "full_path": "analyze_real_spectrum.py"
+    },
+    {
+      "id": "demo_all_tasks.py",
+      "label": "demo_all_tasks.py",
+      "module": "script",
+      "full_path": "demo_all_tasks.py"
+    },
+    {
+      "id": "demo_delivery.py",
+      "label": "demo_delivery.py",
+      "module": "script",
+      "full_path": "demo_delivery.py"
+    },
+    {
+      "id": "spectrum_batch.py",
+      "label": "spectrum_batch.py",
+      "module": "script",
+      "full_path": "spectrum_batch.py"
+    },
+    {
+      "id": "spectrum_cli.py",
+      "label": "spectrum_cli.py",
+      "module": "script",
+      "full_path": "spectrum_cli.py"
+    },
+    {
+      "id": "src\\core\\config.py",
+      "label": "config.py",
+      "module": "core",
+      "full_path": "src\\core\\config.py"
+    },
+    {
+      "id": "src\\core\\schemas.py",
+      "label": "schemas.py",
+      "module": "core",
+      "full_path": "src\\core\\schemas.py"
+    },
+    {
+      "id": "src\\io\\reader.py",
+      "label": "reader.py",
+      "module": "io",
+      "full_path": "src\\io\\reader.py"
+    },
+    {
+      "id": "src\\pipeline\\analyze_comb.py",
+      "label": "analyze_comb.py",
+      "module": "pipeline",
+      "full_path": "src\\pipeline\\analyze_comb.py"
+    },
+    {
+      "id": "src\\pipeline\\compose_spectrum.py",
+      "label": "compose_spectrum.py",
+      "module": "pipeline",
+      "full_path": "src\\pipeline\\compose_spectrum.py"
+    },
+    {
+      "id": "src\\pipeline\\demo_resolution.py",
+      "label": "demo_resolution.py",
+      "module": "pipeline",
+      "full_path": "src\\pipeline\\demo_resolution.py"
+    },
+    {
+      "id": "src\\pipeline\\generate_jammers.py",
+      "label": "generate_jammers.py",
+      "module": "pipeline",
+      "full_path": "src\\pipeline\\generate_jammers.py"
+    },
+    {
+      "id": "src\\pipeline\\interactive_cli.py",
+      "label": "interactive_cli.py",
+      "module": "pipeline",
+      "full_path": "src\\pipeline\\interactive_cli.py"
+    },
+    {
+      "id": "src\\pipeline\\jammer_demo.py",
+      "label": "jammer_demo.py",
+      "module": "pipeline",
+      "full_path": "src\\pipeline\\jammer_demo.py"
+    },
+    {
+      "id": "src\\pipeline\\overlay_comb.py",
+      "label": "overlay_comb.py",
+      "module": "pipeline",
+      "full_path": "src\\pipeline\\overlay_comb.py"
+    },
+    {
+      "id": "src\\pipeline\\semantic_eval.py",
+      "label": "semantic_eval.py",
+      "module": "pipeline",
+      "full_path": "src\\pipeline\\semantic_eval.py"
+    },
+    {
+      "id": "src\\pipeline\\semantic_eval_v2.py",
+      "label": "semantic_eval_v2.py",
+      "module": "pipeline",
+      "full_path": "src\\pipeline\\semantic_eval_v2.py"
+    },
+    {
+      "id": "src\\pipeline\\semantic_generate.py",
+      "label": "semantic_generate.py",
+      "module": "pipeline",
+      "full_path": "src\\pipeline\\semantic_generate.py"
+    },
+    {
+      "id": "src\\pipeline\\semantic_plot.py",
+      "label": "semantic_plot.py",
+      "module": "pipeline",
+      "full_path": "src\\pipeline\\semantic_plot.py"
+    },
+    {
+      "id": "src\\pipeline\\simulate_iq.py",
+      "label": "simulate_iq.py",
+      "module": "pipeline",
+      "full_path": "src\\pipeline\\simulate_iq.py"
+    },
+    {
+      "id": "src\\pipeline\\stitch_multi.py",
+      "label": "stitch_multi.py",
+      "module": "pipeline",
+      "full_path": "src\\pipeline\\stitch_multi.py"
+    },
+    {
+      "id": "src\\pipeline\\stitch_real_data.py",
+      "label": "stitch_real_data.py",
+      "module": "pipeline",
+      "full_path": "src\\pipeline\\stitch_real_data.py"
+    },
+    {
+      "id": "src\\semantics\\decode.py",
+      "label": "decode.py",
+      "module": "semantics",
+      "full_path": "src\\semantics\\decode.py"
+    },
+    {
+      "id": "src\\semantics\\decode_multi.py",
+      "label": "decode_multi.py",
+      "module": "semantics",
+      "full_path": "src\\semantics\\decode_multi.py"
+    },
+    {
+      "id": "src\\semantics\\decode_v2.py",
+      "label": "decode_v2.py",
+      "module": "semantics",
+      "full_path": "src\\semantics\\decode_v2.py"
+    },
+    {
+      "id": "src\\semantics\\edge_detect.py",
+      "label": "edge_detect.py",
+      "module": "semantics",
+      "full_path": "src\\semantics\\edge_detect.py"
+    },
+    {
+      "id": "src\\signal\\jammers.py",
+      "label": "jammers.py",
+      "module": "signal",
+      "full_path": "src\\signal\\jammers.py"
+    },
+    {
+      "id": "src\\signal\\segmentation.py",
+      "label": "segmentation.py",
+      "module": "signal",
+      "full_path": "src\\signal\\segmentation.py"
+    },
+    {
+      "id": "src\\signal\\spectrum.py",
+      "label": "spectrum.py",
+      "module": "signal",
+      "full_path": "src\\signal\\spectrum.py"
+    },
+    {
+      "id": "src\\signal\\spectrum_composer.py",
+      "label": "spectrum_composer.py",
+      "module": "signal",
+      "full_path": "src\\signal\\spectrum_composer.py"
+    },
+    {
+      "id": "src\\signal\\stitcher.py",
+      "label": "stitcher.py",
+      "module": "signal",
+      "full_path": "src\\signal\\stitcher.py"
+    },
+    {
+      "id": "src\\visualization\\__init__.py",
+      "label": "__init__.py",
+      "module": "visualization",
+      "full_path": "src\\visualization\\__init__.py"
+    },
+    {
+      "id": "src\\visualization\\spectrum_plot.py",
+      "label": "spectrum_plot.py",
+      "module": "visualization",
+      "full_path": "src\\visualization\\spectrum_plot.py"
+    },
+    {
+      "id": "src\\viz\\plots.py",
+      "label": "plots.py",
+      "module": "viz",
+      "full_path": "src\\viz\\plots.py"
+    },
+    {
+      "id": "test_multi_region.py",
+      "label": "test_multi_region.py",
+      "module": "script",
+      "full_path": "test_multi_region.py"
+    },
+    {
+      "id": "test_task2_create_bins.py",
+      "label": "test_task2_create_bins.py",
+      "module": "script",
+      "full_path": "test_task2_create_bins.py"
+    },
+    {
+      "id": "tests\\conftest.py",
+      "label": "conftest.py",
+      "module": "script",
+      "full_path": "tests\\conftest.py"
+    },
+    {
+      "id": "tests\\test_cli_bin_support.py",
+      "label": "test_cli_bin_support.py",
+      "module": "script",
+      "full_path": "tests\\test_cli_bin_support.py"
+    },
+    {
+      "id": "tests\\test_core_fixes.py",
+      "label": "test_core_fixes.py",
+      "module": "script",
+      "full_path": "tests\\test_core_fixes.py"
+    },
+    {
+      "id": "tests\\test_io_reader.py",
+      "label": "test_io_reader.py",
+      "module": "script",
+      "full_path": "tests\\test_io_reader.py"
+    },
+    {
+      "id": "tests\\test_pipeline_semantic_eval.py",
+      "label": "test_pipeline_semantic_eval.py",
+      "module": "script",
+      "full_path": "tests\\test_pipeline_semantic_eval.py"
+    },
+    {
+      "id": "tests\\test_segmentation.py",
+      "label": "test_segmentation.py",
+      "module": "script",
+      "full_path": "tests\\test_segmentation.py"
+    },
+    {
+      "id": "tests\\test_semantics.py",
+      "label": "test_semantics.py",
+      "module": "script",
+      "full_path": "tests\\test_semantics.py"
+    },
+    {
+      "id": "tests\\test_semantics_multi_region.py",
+      "label": "test_semantics_multi_region.py",
+      "module": "script",
+      "full_path": "tests\\test_semantics_multi_region.py"
+    },
+    {
+      "id": "tests\\test_semantics_v2.py",
+      "label": "test_semantics_v2.py",
+      "module": "script",
+      "full_path": "tests\\test_semantics_v2.py"
+    },
+    {
+      "id": "tests\\test_spectrum.py",
+      "label": "test_spectrum.py",
+      "module": "script",
+      "full_path": "tests\\test_spectrum.py"
+    }
+  ],
+  "edges": [
+    {
+      "source": "analyze_real_iq.py",
+      "target": "src\\io\\reader.py",
+      "type": "from_import"
+    },
+    {
+      "source": "demo_all_tasks.py",
+      "target": "src\\signal\\spectrum_composer.py",
+      "type": "from_import"
+    },
+    {
+      "source": "demo_all_tasks.py",
+      "target": "src\\signal\\stitcher.py",
+      "type": "from_import"
+    },
+    {
+      "source": "demo_all_tasks.py",
+      "target": "src\\semantics\\decode.py",
+      "type": "from_import"
+    },
+    {
+      "source": "demo_all_tasks.py",
+      "target": "src\\core\\schemas.py",
+      "type": "from_import"
+    },
+    {
+      "source": "demo_delivery.py",
+      "target": "src\\signal\\spectrum_composer.py",
+      "type": "from_import"
+    },
+    {
+      "source": "demo_delivery.py",
+      "target": "src\\signal\\stitcher.py",
+      "type": "from_import"
+    },
+    {
+      "source": "demo_delivery.py",
+      "target": "src\\semantics\\decode.py",
+      "type": "from_import"
+    },
+    {
+      "source": "demo_delivery.py",
+      "target": "src\\core\\schemas.py",
+      "type": "from_import"
+    },
+    {
+      "source": "demo_delivery.py",
+      "target": "src\\visualization\\spectrum_plot.py",
+      "type": "from_import"
+    },
+    {
+      "source": "spectrum_batch.py",
+      "target": "src\\signal\\spectrum_composer.py",
+      "type": "from_import"
+    },
+    {
+      "source": "spectrum_batch.py",
+      "target": "src\\signal\\stitcher.py",
+      "type": "from_import"
+    },
+    {
+      "source": "spectrum_batch.py",
+      "target": "src\\pipeline\\stitch_real_data.py",
+      "type": "from_import"
+    },
+    {
+      "source": "spectrum_batch.py",
+      "target": "src\\io\\reader.py",
+      "type": "from_import"
+    },
+    {
+      "source": "spectrum_batch.py",
+      "target": "src\\semantics\\decode.py",
+      "type": "from_import"
+    },
+    {
+      "source": "spectrum_batch.py",
+      "target": "src\\semantics\\decode_multi.py",
+      "type": "from_import"
+    },
+    {
+      "source": "spectrum_batch.py",
+      "target": "src\\semantics\\decode_v2.py",
+      "type": "from_import"
+    },
+    {
+      "source": "spectrum_batch.py",
+      "target": "src\\core\\schemas.py",
+      "type": "from_import"
+    },
+    {
+      "source": "spectrum_cli.py",
+      "target": "src\\signal\\spectrum_composer.py",
+      "type": "from_import"
+    },
+    {
+      "source": "spectrum_cli.py",
+      "target": "src\\signal\\stitcher.py",
+      "type": "from_import"
+    },
+    {
+      "source": "spectrum_cli.py",
+      "target": "src\\pipeline\\stitch_real_data.py",
+      "type": "from_import"
+    },
+    {
+      "source": "spectrum_cli.py",
+      "target": "src\\io\\reader.py",
+      "type": "from_import"
+    },
+    {
+      "source": "spectrum_cli.py",
+      "target": "src\\semantics\\decode.py",
+      "type": "from_import"
+    },
+    {
+      "source": "spectrum_cli.py",
+      "target": "src\\core\\schemas.py",
+      "type": "from_import"
+    },
+    {
+      "source": "test_multi_region.py",
+      "target": "src\\core\\schemas.py",
+      "type": "from_import"
+    },
+    {
+      "source": "test_multi_region.py",
+      "target": "src\\semantics\\decode_multi.py",
+      "type": "from_import"
+    },
+    {
+      "source": "test_multi_region.py",
+      "target": "src\\visualization\\spectrum_plot.py",
+      "type": "from_import"
+    },
+    {
+      "source": "test_task2_create_bins.py",
+      "target": "src\\signal\\jammers.py",
+      "type": "from_import"
+    },
+    {
+      "source": "tests\\test_cli_bin_support.py",
+      "target": "src\\io\\reader.py",
+      "type": "from_import"
+    },
+    {
+      "source": "tests\\test_cli_bin_support.py",
+      "target": "src\\pipeline\\stitch_real_data.py",
+      "type": "from_import"
+    },
+    {
+      "source": "tests\\test_cli_bin_support.py",
+      "target": "src\\signal\\stitcher.py",
+      "type": "from_import"
+    },
+    {
+      "source": "tests\\test_cli_bin_support.py",
+      "target": "src\\pipeline\\stitch_real_data.py",
+      "type": "from_import"
+    },
+    {
+      "source": "tests\\test_cli_bin_support.py",
+      "target": "src\\io\\reader.py",
+      "type": "from_import"
+    },
+    {
+      "source": "tests\\test_cli_bin_support.py",
+      "target": "src\\signal\\stitcher.py",
+      "type": "from_import"
+    },
+    {
+      "source": "tests\\test_core_fixes.py",
+      "target": "src\\signal\\spectrum_composer.py",
+      "type": "from_import"
+    },
+    {
+      "source": "tests\\test_core_fixes.py",
+      "target": "src\\signal\\stitcher.py",
+      "type": "from_import"
+    },
+    {
+      "source": "tests\\test_core_fixes.py",
+      "target": "src\\semantics\\decode.py",
+      "type": "from_import"
+    },
+    {
+      "source": "tests\\test_core_fixes.py",
+      "target": "src\\semantics\\edge_detect.py",
+      "type": "from_import"
+    },
+    {
+      "source": "tests\\test_core_fixes.py",
+      "target": "src\\core\\schemas.py",
+      "type": "from_import"
+    },
+    {
+      "source": "tests\\test_core_fixes.py",
+      "target": "src\\signal\\jammers.py",
+      "type": "from_import"
+    },
+    {
+      "source": "tests\\test_io_reader.py",
+      "target": "src\\io\\reader.py",
+      "type": "from_import"
+    },
+    {
+      "source": "tests\\test_pipeline_semantic_eval.py",
+      "target": "src\\core\\schemas.py",
+      "type": "from_import"
+    },
+    {
+      "source": "tests\\test_pipeline_semantic_eval.py",
+      "target": "src\\pipeline\\semantic_eval.py",
+      "type": "from_import"
+    },
+    {
+      "source": "tests\\test_pipeline_semantic_eval.py",
+      "target": "src\\semantics\\decode.py",
+      "type": "from_import"
+    },
+    {
+      "source": "tests\\test_segmentation.py",
+      "target": "src\\core\\schemas.py",
+      "type": "from_import"
+    },
+    {
+      "source": "tests\\test_segmentation.py",
+      "target": "src\\signal\\segmentation.py",
+      "type": "from_import"
+    },
+    {
+      "source": "tests\\test_semantics.py",
+      "target": "src\\core\\schemas.py",
+      "type": "from_import"
+    },
+    {
+      "source": "tests\\test_semantics.py",
+      "target": "src\\semantics\\decode.py",
+      "type": "from_import"
+    },
+    {
+      "source": "tests\\test_semantics_multi_region.py",
+      "target": "src\\core\\schemas.py",
+      "type": "from_import"
+    },
+    {
+      "source": "tests\\test_semantics_multi_region.py",
+      "target": "src\\semantics\\decode.py",
+      "type": "from_import"
+    },
+    {
+      "source": "tests\\test_semantics_multi_region.py",
+      "target": "src\\semantics\\decode_multi.py",
+      "type": "from_import"
+    },
+    {
+      "source": "tests\\test_semantics_multi_region.py",
+      "target": "src\\semantics\\edge_detect.py",
+      "type": "from_import"
+    },
+    {
+      "source": "tests\\test_semantics_v2.py",
+      "target": "src\\core\\schemas.py",
+      "type": "from_import"
+    },
+    {
+      "source": "tests\\test_semantics_v2.py",
+      "target": "src\\semantics\\decode_v2.py",
+      "type": "from_import"
+    },
+    {
+      "source": "tests\\test_spectrum.py",
+      "target": "src\\core\\schemas.py",
+      "type": "from_import"
+    },
+    {
+      "source": "tests\\test_spectrum.py",
+      "target": "src\\signal\\spectrum.py",
+      "type": "from_import"
+    }
+  ]
+}

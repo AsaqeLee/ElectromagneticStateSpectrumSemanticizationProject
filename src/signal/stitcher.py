@@ -129,6 +129,37 @@ def stitch_segments(
 
     # 构建全局频率轴
     global_axis, step = _build_global_axis(segments)
+    global_min = float(global_axis.min())
+    global_max = float(global_axis.max())
+
+    # 预检查：确保每个分段与全局频率轴存在合理重叠，避免静默丢弃
+    for i, seg in enumerate(segments):
+        if seg.freq_mhz.size == 0:
+            raise ValueError(f"分段 {i} 频率点数为 0，无法参与拼接")
+
+        seg_min = float(seg.freq_mhz.min())
+        seg_max = float(seg.freq_mhz.max())
+
+        # 完全超出全局范围：直接报错而不是静默丢弃
+        if seg_max < global_min - step or seg_min > global_max + step:
+            raise ValueError(
+                f"分段 {i} 的频率范围 [{seg_min:.6f}, {seg_max:.6f}] MHz "
+                f"完全落在全局范围 [{global_min:.6f}, {global_max:.6f}] MHz 之外"
+            )
+
+        # 计算重叠比例，过小则给出警告（但仍然允许拼接）
+        overlap_min = max(seg_min, global_min)
+        overlap_max = min(seg_max, global_max)
+        if overlap_max > overlap_min:
+            overlap_ratio = (overlap_max - overlap_min) / (seg_max - seg_min)
+            if overlap_ratio < 0.5:
+                import warnings
+
+                warnings.warn(
+                    f"分段 {i} 与全局频率轴的重叠比例仅 "
+                    f"{overlap_ratio * 100:.1f}%，大部分数据可能被丢弃",
+                    RuntimeWarning,
+                )
 
     # 初始化拼接结果
     if mode == StitchMode.MAX:

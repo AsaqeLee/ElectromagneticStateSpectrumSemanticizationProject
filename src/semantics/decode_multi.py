@@ -20,6 +20,7 @@ def decode_semantic_multi_region(params: SemanticParams) -> np.ndarray:
     使用 pos_edge/neg_edge 成对定义多个区域：
     - pos_edge[i] 和 neg_edge[i] 定义第 i 个干扰区域
     - 每个区域使用 sinr[i] 作为 JNR（如果 sinr 是标量则所有区域用同一个值）
+    - 区域索引语义为闭区间 [start, end]，即同时包含起止两个端点
 
     示例：
         params = SemanticParams(
@@ -54,9 +55,9 @@ def decode_semantic_multi_region(params: SemanticParams) -> np.ndarray:
     # 初始化为底噪
     power_db = np.full(params.fenbianlv, params.menxian, dtype=float)
 
-    # 填充每个干扰区域
+    # 填充每个干扰区域（注意：这里使用数学上的闭区间 [start, end]）
     for i, (start_bin, end_bin) in enumerate(zip(params.pos_edge, params.neg_edge)):
-        # 边界检查
+        # 边界检查：确保闭区间 [start_bin, end_bin] 落在 [0, fenbianlv-1] 内
         if start_bin < 0 or end_bin >= params.fenbianlv or start_bin > end_bin:
             raise ValueError(
                 f"区域 {i} 的边界非法: start={start_bin}, end={end_bin}, "
@@ -70,6 +71,8 @@ def decode_semantic_multi_region(params: SemanticParams) -> np.ndarray:
             jnr_db = float(params.sinr[i])
 
         # 填充功率（绝对功率 = 底噪 + JNR）
+        # Python 切片使用左闭右开 [start_bin, end_bin+1)，
+        # 对应数学上的闭区间 [start_bin, end_bin]
         power_db[start_bin:end_bin+1] = params.menxian + jnr_db
 
     return power_db

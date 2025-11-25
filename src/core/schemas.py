@@ -90,26 +90,71 @@ class SemanticParams:
         return (self.freq_max_mhz - self.freq_min_mhz) / float(self.fenbianlv - 1)
 
     def validate(self) -> None:
+        """验证语义参数的完整性和一致性。
+
+        约束规则（按优先级由高到低）：
+        1. 基本数值范围合法（fenbianlv、频率区间）
+        2. start/end 在有效索引范围内且形成闭区间 [start, end]
+        3. pos_edge/neg_edge 索引均在 [0, fenbianlv) 且长度相等
+        4. sinr 非空，且长度为 1 或 end-start+1
+        """
+
+        # 1. 基本范围检查
+        if self.fenbianlv <= 0:
+            raise ValueError("fenbianlv 必须为正整数")
+        if self.freq_max_mhz <= self.freq_min_mhz:
+            raise ValueError(
+                f"freq_max_mhz ({self.freq_max_mhz}) 必须大于 "
+                f"freq_min_mhz ({self.freq_min_mhz})"
+            )
+
+        # 2. start/end 索引范围检查（闭区间 [start, end]）
         if self.start < 0 or self.end < 0:
             raise ValueError("start/end 不能为负数")
         if self.start > self.end:
-            raise ValueError("start 必须小于等于 end")
-        if self.fenbianlv <= self.end:
-            raise ValueError("fenbianlv 必须大于 end，确保索引不越界")
-        if self.fenbianlv <= 0:
-            raise ValueError("fenbianlv 必须为正")
-        if self.freq_max_mhz <= self.freq_min_mhz:
-            raise ValueError("freq_max_mhz 必须大于 freq_min_mhz")
+            raise ValueError(f"start ({self.start}) 必须 <= end ({self.end})")
+        if self.end >= self.fenbianlv:
+            raise ValueError(
+                f"end ({self.end}) 必须 < fenbianlv ({self.fenbianlv})，"
+                "索引范围应为 [0, fenbianlv-1]"
+            )
+
+        # 3. 边缘索引验证：所有边缘索引必须落在 [0, fenbianlv) 内
+        for i, idx in enumerate(self.pos_edge):
+            if not (0 <= idx < self.fenbianlv):
+                raise ValueError(
+                    f"pos_edge[{i}] = {idx} 越界，有效范围 [0, {self.fenbianlv - 1}]"
+                )
+
+        for i, idx in enumerate(self.neg_edge):
+            if not (0 <= idx < self.fenbianlv):
+                raise ValueError(
+                    f"neg_edge[{i}] = {idx} 越界，有效范围 [0, {self.fenbianlv - 1}]"
+                )
+
+        # 4. 边缘长度一致性检查
+        if len(self.pos_edge) != len(self.neg_edge):
+            raise ValueError(
+                "pos_edge 和 neg_edge 长度必须相等，"
+                f"当前分别为 {len(self.pos_edge)} 和 {len(self.neg_edge)}"
+            )
+
+        # 5. sinr 检查：不能为空，且长度必须匹配区间长度或为统一 JNR
         if self.sinr.size == 0:
             raise ValueError("sinr 不能为空")
+
         expected = self.end - self.start + 1
         if self.sinr.size not in (1, expected):
-            raise ValueError(f"sinr 长度需为 1 或 {expected}，当前 {self.sinr.size}")
+            raise ValueError(
+                f"sinr 长度需为 1（统一 JNR）或 {expected}（逐点 JNR），"
+                f"当前 {self.sinr.size}"
+            )
 
     @classmethod
     def from_dict(cls, data: dict) -> "SemanticParams":
+        """从字典构造 SemanticParams，并立即执行合法性校验。"""
         sinr = np.asarray(data.get("sinr", []), dtype=float)
-        return cls(
+        obj = cls(
             yonghu=int(data["yonghu"]),
             youwu=int(data["youwu"]),
             menxian=float(data["menxian"]),
@@ -119,9 +164,15 @@ class SemanticParams:
             end=int(data["end"]),
             fenbianlv=int(data["fenbianlv"]),
             sinr=sinr,
-            freq_min_mhz=float(data.get("freq_min_mhz", DEFAULT_SEMANTIC_FREQ_MIN_MHZ)),
-            freq_max_mhz=float(data.get("freq_max_mhz", DEFAULT_SEMANTIC_FREQ_MAX_MHZ)),
+            freq_min_mhz=float(
+                data.get("freq_min_mhz", DEFAULT_SEMANTIC_FREQ_MIN_MHZ)
+            ),
+            freq_max_mhz=float(
+                data.get("freq_max_mhz", DEFAULT_SEMANTIC_FREQ_MAX_MHZ)
+            ),
         )
+        obj.validate()
+        return obj
 
     def to_dict(self) -> dict:
         return {

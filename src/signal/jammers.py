@@ -30,7 +30,22 @@ class JammerConfig:
 
 
 def _ensure_rng(rng: np.random.Generator | None) -> np.random.Generator:
-    return rng or np.random.default_rng()
+    """确保返回一个 np.random.Generator 实例。
+
+    支持的输入：
+    - None: 使用全局默认生成器（不可预测）；
+    - Generator 实例: 直接返回；
+    - 整型种子: 使用该种子构造新的 Generator。
+
+    其他类型一律视为错误，防止悄悄把错误对象当成随机数源。
+    """
+    if rng is None:
+        return np.random.default_rng()
+    if isinstance(rng, np.random.Generator):
+        return rng
+    if isinstance(rng, (int, np.integer)):
+        return np.random.default_rng(int(rng))
+    raise TypeError(f"rng 必须是 np.random.Generator 或整数种子，当前类型: {type(rng)!r}")
 
 
 def _add_awgn_measured(iq: np.ndarray, snr_db: float, rng: np.random.Generator | None = None) -> np.ndarray:
@@ -247,4 +262,3 @@ def generate_jammer(
     except KeyError as exc:
         raise ValueError(f"未知干扰类型: {jam_type}") from exc
     return fn(fc_hz, cfg, rng)
-

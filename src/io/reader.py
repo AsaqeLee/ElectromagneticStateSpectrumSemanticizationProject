@@ -37,7 +37,7 @@ class BinDataType(str, Enum):
     COMPLEX128 = "complex128"  # 复数 float64
 
 
-def parse_bin_filename(filename: str) -> dict:
+def parse_bin_filename(filename: str, strict: bool = False) -> dict:
     """从文件名解析元数据。
 
     支持格式: {type}_{center_freq}MHz_{bandwidth}MHz_{timestamp}.bin
@@ -47,12 +47,17 @@ def parse_bin_filename(filename: str) -> dict:
     - jam_type: 干扰类型
     - center_freq_mhz: 中心频率 MHz
     - bandwidth_mhz: 带宽 MHz
+
+    参数:
+    - strict: 为 True 时，解析失败将抛出 ValueError；为 False 时返回空 dict。
     """
     # 匹配模式: type_freqMHz_bwMHz_timestamp.bin
     pattern = r"^(\w+)_(\d+(?:\.\d+)?)MHz_(\d+(?:\.\d+)?)MHz_.*\.bin$"
     match = re.match(pattern, filename)
 
     if not match:
+        if strict:
+            raise ValueError(f"无法从文件名解析元数据（strict 模式）：{filename}")
         return {}
 
     return {
@@ -68,54 +73,75 @@ def _load_bin(
     sample_rate_hz: float | None = None,
     center_freq_hz: float | None = None,
 ) -> Tuple[np.ndarray, dict]:
-    """加载二进制IQ文件。
+    """加载二进制IQ文件，并对常见错误场景做健壮性处理。
 
     参数:
     - path: 文件路径
     - dtype: 数据类型
-    - sample_rate_hz: 采样率（如果为None，尝试从文件名推断）
-    - center_freq_hz: 中心频率（如果为None，尝试从文件名推断）
+    - sample_rate_hz: 采样率（如果为 None，尝试从文件名推断）
+    - center_freq_hz: 中心频率（如果为 None，尝试从文件名推断）
 
     返回:
     - samples: 复数IQ数组
     - meta: 元数据字典
     """
-    # 从文件名解析元数据
-    meta = parse_bin_filename(path.name)
+    # 1. 基本文件检查
+    if not path.exists():
+        raise FileNotFoundError(f"二进制 IQ 文件不存在: {path}")
+    if not path.is_file():
+        raise ValueError(f"路径不是普通文件: {path}")
 
-    # 读取二进制数据
-    if dtype == BinDataType.INT16:
-        raw = np.fromfile(path, dtype=np.int16)
-        # 交织格式转复数
-        samples = raw[0::2].astype(np.float64) + 1j * raw[1::2].astype(np.float64)
-        # 归一化到 [-1, 1]
-        samples = samples / 32768.0
+    file_size = path.stat().st_size
+    if file_size == 0:
+        raise ValueError(f"二进制 IQ 文件为空: {path}")
 
-    elif dtype == BinDataType.INT8:
-        raw = np.fromfile(path, dtype=np.int8)
-        samples = raw[0::2].astype(np.float64) + 1j * raw[1::2].astype(np.float64)
-        samples = samples / 128.0
+    # 2. 从文件名解析元数据（宽松模式，失败时返回空 dict）
+    meta = parse_bin_filename(path.name, strict=False)
 
-    elif dtype == BinDataType.FLOAT32:
-        raw = np.fromfile(path, dtype=np.float32)
-        samples = raw[0::2].astype(np.float64) + 1j * raw[1::2].astype(np.float64)
+    # 3. 读取二进制数据并转换为复数 IQ
+    try:
+        if dtype == BinDataType.INT16:
+            raw = np.fromfile(path, dtype=np.int16)
+            if raw.size % 2 != 0:
+                raise ValueError(f"INT16 IQ 数据长度必须为偶数，当前 {raw.size}，文件: {path}")
+            samples = raw[0::2].astype(np.float64) + 1j * raw[1::2].astype(np.float64)
+            samples = samples / 32768.0  # 归一化到 [-1, 1]
 
-    elif dtype == BinDataType.COMPLEX64:
-        samples = np.fromfile(path, dtype=np.complex64).astype(np.complex128)
+        elif dtype == BinDataType.INT8:
+            raw = np.fromfile(path, dtype=np.int8)
+            if raw.size % 2 != 0:
+                raise ValueError(f"INT8 IQ 数据长度必须为偶数，当前 {raw.size}，文件: {path}")
+            samples = raw[0::2].astype(np.float64) + 1j * raw[1::2].astype(np.float64)
+            samples = samples / 128.0
 
-    elif dtype == BinDataType.COMPLEX128:
-        samples = np.fromfile(path, dtype=np.complex128)
+        elif dtype == BinDataType.FLOAT32:
+            raw = np.fromfile(path, dtype=np.float32)
+            if raw.size % 2 != 0:
+                raise ValueError(
+                    f"FLOAT32 IQ 数据长度必须为偶数（实部/虚部交织），当前 {raw.size}，文件: {path}"
+                )
+            samples = raw[0::2].astype(np.float64) + 1j * raw[1::2].astype(np.float64)
 
-    else:
-        raise ValueError(f"不支持的数据类型: {dtype}")
+        elif dtype == BinDataType.COMPLEX64:
+            samples = np.fromfile(path, dtype=np.complex64).astype(np.complex128)
 
-    # 从文件名推断采样率和中心频率
+        elif dtype == BinDataType.COMPLEX128:
+            samples = np.fromfile(path, dtype=np.complex128)
+
+        else:
+            raise ValueError(f"不支持的数据类型: {dtype}")
+
+    except (IOError, OSError) as e:
+        # 显式包装底层 IO 异常，便于调用方区分
+        raise IOError(f"读取二进制 IQ 文件失败 {path}: {e}") from e
+
+    # 4. 从文件名推断采样率和中心频率
     if "bandwidth_mhz" in meta:
         meta["sample_rate_hz"] = meta["bandwidth_mhz"] * 1e6
     if "center_freq_mhz" in meta:
         meta["center_freq_hz"] = meta["center_freq_mhz"] * 1e6
 
-    # 覆盖用户指定的参数
+    # 5. 覆盖用户指定的参数
     if sample_rate_hz is not None:
         meta["sample_rate_hz"] = sample_rate_hz
     if center_freq_hz is not None:
@@ -132,13 +158,38 @@ def _load_npy(path: Path) -> Tuple[np.ndarray, dict]:
 
 
 def _load_npz(path: Path) -> Tuple[np.ndarray, dict]:
-    """加载 .npz 文件，将除 `iq` 以外的键都视为元数据返回。"""
-    with np.load(path) as data:
-        if "iq" not in data:
-            raise ValueError("npz 文件需包含键 `iq`")
-        samples = data["iq"]
-        meta = {k: data[k].item() if data[k].size == 1 else data[k] for k in data.files if k != "iq"}
-    return samples, meta
+    """加载 .npz 文件，将除 `iq` 以外的键都视为元数据返回。
+
+    对元数据数组的处理策略：
+    - size == 0: 原样返回空数组；
+    - size == 1: 尝试 .item() 提取标量，失败则保留为数组；
+    - size > 1: 保留为 numpy 数组，避免误用 .item() 触发异常。
+    """
+    try:
+        with np.load(path) as data:
+            if "iq" not in data:
+                raise ValueError("npz 文件需包含键 `iq`")
+            samples = data["iq"]
+
+            meta: dict[str, object] = {}
+            for k in data.files:
+                if k == "iq":
+                    continue
+                v = data[k]
+                if v.size == 0:
+                    meta[k] = v
+                elif v.size == 1:
+                    try:
+                        meta[k] = v.item()
+                    except ValueError:
+                        # 复数或结构化数组时，保持为数组
+                        meta[k] = v
+                else:
+                    meta[k] = v
+
+        return samples, meta
+    except (IOError, OSError) as e:
+        raise IOError(f"读取 npz 文件失败 {path}: {e}") from e
 
 
 def _load_h5(path: Path) -> Tuple[np.ndarray, dict]:
