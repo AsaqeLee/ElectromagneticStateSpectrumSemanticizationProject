@@ -15,9 +15,11 @@ import numpy as np
 # Fix Windows console encoding
 if sys.platform == "win32":
     import io
-
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+    try:
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 
 try:  # pragma: no cover
     from .semantic_eval import _load_reference, _validate_alignment

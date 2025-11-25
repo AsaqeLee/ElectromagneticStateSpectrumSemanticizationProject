@@ -7,14 +7,9 @@
 - 支持多版本算法对比
 """
 
-from .semantic_generate import generate_semantic_info
-from .semantic_eval import evaluate_semantic_recovery
-from .semantic_eval_v2 import evaluate_semantic_recovery_v2
-from .semantic_plot import plot_semantic_comparison
+from . import semantic_generate
+from . import semantic_eval
+from . import semantic_eval_v2
+from . import semantic_plot
 
-__all__ = [
-    'generate_semantic_info',
-    'evaluate_semantic_recovery',
-    'evaluate_semantic_recovery_v2',
-    'plot_semantic_comparison'
-]
+__all__ = ['semantic_generate', 'semantic_eval', 'semantic_eval_v2', 'semantic_plot']

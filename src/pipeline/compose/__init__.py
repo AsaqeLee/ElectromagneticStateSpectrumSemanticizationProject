@@ -6,18 +6,9 @@
 - 演示干扰信号生成流程
 """
 
-from .compose_spectrum import compose_interference_spectrum
-from .generate_jammers import (
-    generate_single_tone,
-    generate_linear_chirp,
-    generate_comb_spectrum,
-    generate_multi_tone
-)
+# 这些模块主要是命令行工具，暴露 main 函数供 python -m 调用
+from . import compose_spectrum
+from . import generate_jammers  
+from . import jammer_demo
 
-__all__ = [
-    'compose_interference_spectrum',
-    'generate_single_tone',
-    'generate_linear_chirp',
-    'generate_comb_spectrum',
-    'generate_multi_tone'
-]
+__all__ = ['compose_spectrum', 'generate_jammers', 'jammer_demo']

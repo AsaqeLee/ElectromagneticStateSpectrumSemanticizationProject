@@ -6,14 +6,9 @@
 - 分辨率演示与验证
 """
 
-from .analyze_comb import analyze_comb_spectrum
-from .overlay_comb import overlay_comb_on_spectrum
-from .simulate_iq import simulate_iq_data
-from .demo_resolution import demonstrate_resolution
+from . import analyze_comb
+from . import overlay_comb
+from . import simulate_iq
+from . import demo_resolution
 
-__all__ = [
-    'analyze_comb_spectrum',
-    'overlay_comb_on_spectrum',
-    'simulate_iq_data',
-    'demonstrate_resolution'
-]
+__all__ = ['analyze_comb', 'overlay_comb', 'simulate_iq', 'demo_resolution']
