@@ -12,15 +12,6 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-# Fix Windows console encoding
-if sys.platform == "win32":
-    import io
-    try:
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
-    except (AttributeError, ValueError):
-        pass
-
 try:  # pragma: no cover
     from ...signal.spectrum_composer import SpectrumComposerConfig, add_jammer, compose_spectrum
 except ImportError:  # pragma: no cover
@@ -211,4 +202,13 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    # Fix Windows console encoding for CLI use
+    if sys.platform == "win32":
+        import io
+        try:
+            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+            sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+        except (AttributeError, ValueError):
+            pass
+    
     main()

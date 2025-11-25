@@ -11,16 +11,6 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-# Fix Windows console encoding
-if sys.platform == "win32":
-    import io
-    try:
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
-    except (AttributeError, ValueError):
-        # stdout/stderr may not have buffer attribute in some environments
-        pass
-
 try:
     from ...io.reader import load_bin_segments, load_iq_file, BinDataType
     from ...signal.stitcher import SpectrumSegment, stitch_segments, StitchMode
@@ -235,4 +225,13 @@ def main():
 
 
 if __name__ == "__main__":
+    # Fix Windows console encoding for CLI use
+    if sys.platform == "win32":
+        import io
+        try:
+            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+            sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+        except (AttributeError, ValueError):
+            pass
+    
     main()

@@ -8,15 +8,6 @@ from pathlib import Path
 
 import numpy as np
 
-# Fix Windows console encoding
-if sys.platform == "win32":
-    import io
-    try:
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
-    except (AttributeError, ValueError):
-        pass
-
 try:  # pragma: no cover
     from ...semantics.decode_multi import decode_file_auto
 except ImportError:  # pragma: no cover
@@ -132,4 +123,13 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    # Fix Windows console encoding for CLI use
+    if sys.platform == "win32":
+        import io
+        try:
+            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+            sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+        except (AttributeError, ValueError):
+            pass
+    
     main()

@@ -34,15 +34,6 @@ from typing import List, Tuple
 import numpy as np
 
 
-if sys.platform == "win32":  # pragma: no cover - 仅在 Windows 控制台下生效
-    import io
-
-    if hasattr(sys.stdout, "buffer") and not sys.stdout.closed:
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-    if hasattr(sys.stderr, "buffer") and not sys.stderr.closed:
-        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
-
-
 @dataclass
 class JammerRegion:
     """单个干扰区间定义。"""
@@ -340,4 +331,12 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    # Fix Windows console encoding for CLI use
+    if sys.platform == "win32":
+        import io
+        if hasattr(sys.stdout, "buffer") and not sys.stdout.closed:
+            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+        if hasattr(sys.stderr, "buffer") and not sys.stderr.closed:
+            sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+    
     main()
