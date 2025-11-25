@@ -19,7 +19,7 @@ if sys.platform == "win32":
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 try:  # pragma: no cover
-    from ..signal.spectrum_composer import SpectrumComposerConfig, add_jammer, compose_spectrum
+    from ...signal.spectrum_composer import SpectrumComposerConfig, add_jammer, compose_spectrum
 except ImportError:  # pragma: no cover
     sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
     from signal.spectrum_composer import SpectrumComposerConfig, add_jammer, compose_spectrum

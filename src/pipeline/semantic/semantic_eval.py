@@ -15,7 +15,7 @@ if sys.platform == "win32":
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 try:  # pragma: no cover
-    from ..semantics.decode_multi import decode_file_auto
+    from ...semantics.decode_multi import decode_file_auto
 except ImportError:  # pragma: no cover
     sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
     from semantics.decode_multi import decode_file_auto

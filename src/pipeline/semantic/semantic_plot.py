@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 try:  # pragma: no cover
-    from ..semantics.decode import decode_file
+    from ...semantics.decode import decode_file
 except ImportError:  # pragma: no cover
     sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
     from semantics.decode import decode_file

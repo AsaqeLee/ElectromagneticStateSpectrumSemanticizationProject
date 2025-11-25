@@ -24,9 +24,9 @@ if sys.platform == "win32":
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 try:  # pragma: no cover - ????????
-    from ..core.config import DEFAULT_WINDOW_CENTERS_MHZ
-    from ..core.schemas import IQData, SamplingConfig
-    from ..signal.spectrum import compute_power_spectrum
+    from ...core.config import DEFAULT_WINDOW_CENTERS_MHZ
+    from ...core.schemas import IQData, SamplingConfig
+    from ...signal.spectrum import compute_power_spectrum
 except ImportError:  # pragma: no cover
     sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
     from core.config import DEFAULT_WINDOW_CENTERS_MHZ

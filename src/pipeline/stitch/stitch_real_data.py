@@ -18,10 +18,10 @@ if sys.platform == "win32":
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 try:
-    from ..io.reader import load_bin_segments, load_iq_file, BinDataType
-    from ..signal.stitcher import SpectrumSegment, stitch_segments, StitchMode
-    from ..signal.spectrum import compute_power_spectrum
-    from ..core.schemas import SamplingConfig
+    from ...io.reader import load_bin_segments, load_iq_file, BinDataType
+    from ...signal.stitcher import SpectrumSegment, stitch_segments, StitchMode
+    from ...signal.spectrum import compute_power_spectrum
+    from ...core.schemas import SamplingConfig
 except ImportError:
     sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
     from io.reader import load_bin_segments, load_iq_file, BinDataType

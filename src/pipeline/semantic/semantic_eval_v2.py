@@ -21,7 +21,7 @@ if sys.platform == "win32":
 
 try:  # pragma: no cover
     from .semantic_eval import _load_reference, _validate_alignment
-    from ..semantics.decode_v2 import decode_file_v2
+    from ...semantics.decode_v2 import decode_file_v2
 except ImportError:  # pragma: no cover
     sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
     from pipeline.semantic.semantic_eval import _load_reference, _validate_alignment
