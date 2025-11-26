@@ -38,7 +38,7 @@
 
 ```
 📦 electromagneticState/
-├── 📂 src/
+├── 📂 src/                         # 源代码（4层架构）
 │   ├── 📁 core/                    # Layer 0: 核心数据结构与配置
 │   │   ├── schemas.py              #   数据类定义（IQData, SemanticParams, SemanticEncodingV2）
 │   │   └── config.py               #   全局配置（频段、窗口中心、默认参数）
@@ -61,30 +61,35 @@
 │   │
 │   ├── 📁 pipeline/                # Layer 2: 业务流程编排
 │   │   ├── compose/                #   任务一流程（频谱合成）
-│   │   │   ├── compose_spectrum.py
-│   │   │   └── generate_jammers.py
 │   │   ├── stitch/                 #   任务二流程（频谱拼接）
-│   │   │   ├── stitch_multi.py
-│   │   │   └── stitch_real_data.py
 │   │   ├── semantic/               #   任务三流程（语义恢复）
-│   │   │   ├── semantic_eval.py    #     v1 评估
-│   │   │   ├── semantic_eval_v2.py #     v2 评估
-│   │   │   └── semantic_generate.py
 │   │   └── utils/                  #   辅助工具
 │   │
 │   └── 📁 visualization/           # 可视化工具
-│       └── viz/
-│
-├── 📂 tests/                       # 单元测试与集成测试
-├── 📂 docs/                        # 项目文档
-│   ├── USAGE_GUIDE.md              #   Python/Pipeline 使用指南
-│   └── semantic_encoding_requirements.md
-│
+│       └── viz/                    #   频谱图绘制
+
+├── 📂 scripts/                     # Layer 3: 命令行工具
+│   ├── spectrum_cli.py             #   交互式 CLI（推荐新手）
+│   └── spectrum_batch.py           #   批处理 CLI（推荐自动化）
+
+├── 📂 tests/                       # 单元测试与集成测试（34个测试）
+├── 📂 docs/                        # 活跃技术文档
+│   ├── semantic_encoding_requirements.md  #   语义编码规范 v2
+│   ├── TASK2_DATA_FORMATS.md              #   数据格式说明
+│   └── 频谱语义化表征及频谱恢复.md         #   原始需求文档
+
+├── 📂 archive/                     # 过时文档归档
+│   ├── reports/                    #   历史任务报告
+│   │   ├── bug_fixes/              #     Bug修复记录
+│   │   ├── documentation/          #     文档工作报告
+│   │   ├── project_tasks/          #     项目任务记录
+│   │   └── analysis/               #     分析报告
+│   └── cli_docs/                   #   旧版CLI文档
+
 ├── 📂 data/                        # 数据输出目录
 ├── 📂 data_semantic/               # 语义参数配置（10 个测试用例）
-│
-├── spectrum_cli.py                 # Layer 3: 交互式 CLI
-├── spectrum_batch.py               # Layer 3: 批处理 CLI
+├── 📂 evidence/                    # 改进建议与评审记录
+
 ├── README.md                       # 项目说明（本文档）
 └── pyproject.toml                  # Python 项目配置
 ```
@@ -217,7 +222,7 @@ python spectrum_cli.py
 - 任务二：频谱分段拼接（加载多个频谱 npz 或分段文件，选择拼接模式，生成宽带谱）；
 - 任务三：语义参数频谱恢复（从 JSON 加载语义参数，恢复功率谱并与参考谱对比）。
 
-> 详细交互步骤、字段说明请见 `USAGE_CLI.md`。
+> 详细交互步骤、字段说明请见 `scripts/spectrum_cli.py` 代码或归档文档 [`archive/cli_docs/USAGE_CLI.md`](archive/cli_docs/USAGE_CLI.md)。
 
 ### 4. 批处理 CLI：`spectrum_batch.py`
 
@@ -405,10 +410,18 @@ python -m src.pipeline.semantic_eval_v2 \
 
 ## 📚 详细文档
 
-- **[使用指南](docs/USAGE_GUIDE.md)** - Python/Pipeline 详细使用方法
+### 活跃文档
+
 - **[语义编码规范](docs/semantic_encoding_requirements.md)** - v2 格式标准定义
-- **[Bug 修复记录](BUG_FIX_SUMMARY.md)** - 详细调试过程与修复方案
-- **[文档准确性审计](DOCUMENTATION_AUDIT_REPORT.md)** - 文档错误识别与修正报告
+- **[数据格式说明](docs/TASK2_DATA_FORMATS.md)** - IQ 数据与频谱格式
+- **[原始需求文档](docs/频谱语义化表征及频谱恢复.md)** - 项目背景与技术要求
+
+### 归档文档（历史参考）
+
+- **[Bug 修复记录](archive/reports/bug_fixes/BUG_FIX_SUMMARY.md)** - 详细调试过程与修复方案
+- **[文档准确性审计](archive/reports/documentation/DOCUMENTATION_AUDIT_REPORT.md)** - 文档错误识别与修正报告
+- **[旧版 CLI 使用指南](archive/cli_docs/USAGE_GUIDE.md)** - Python/Pipeline 详细使用方法（已过时）
+- **[旧版 CLI 文档](archive/cli_docs/)** - 历史 CLI 工具文档
 
 ---
 
@@ -450,27 +463,36 @@ DEFAULT_WINDOW_CENTERS_MHZ = (
 
 ### ✅ 最近完成
 
+- **[2025-11-26] 文档归档整理** - 清理项目结构，归档过时文档
+  - 创建 `archive/` 归档目录结构（reports, cli_docs）
+  - 归档 14 个历史文档到分类目录
+  - 根目录保持整洁，仅保留 README.md
+  - 更新所有文档链接指向正确位置
 - **[2025-11] 项目架构重构** - 完成 4 层模块化架构迁移
   - Layer 0: `core/` (schemas, config)
   - Layer 1: `io/`, `signal/`, `semantics/`
   - Layer 2: `pipeline/` (compose, stitch, semantic, utils)
-  - Layer 3: CLI (spectrum_cli.py, spectrum_batch.py)
+  - Layer 3: `scripts/` (spectrum_cli.py, spectrum_batch.py)
 - **[2025-11] 全局变量清理** - 删除 10 个未使用的手动配置文件
   - 保留 10 个程序生成的语义测试用例 (`semantic_case01.json` ~ `semantic_case10.json`)
-- **[2025-11] 频谱分析工具** - 完成图像差异分析报告生成
-  - 识别合成数据与真实数据的功率校准问题
-  - 建立拼接算法版本差异文档
+- **[2025-11] Bug 修复与文档准确性审计** - 完成所有测试通过和文档校正
+  - 修复噪声波动参数 (commit `7fc78d9`)
+  - 完成 14 处文档错误识别与修正
+  - 生成详细的审计报告和修复记录
 
 ### 📋 测试状态
 
 - **总测试数**: 34 个
 - **通过率**: 100% ✅ 所有测试通过
 - **最近修复**: 噪声波动参数优化 (commit `7fc78d9`) - `test_high_frequency_jammer` 现已通过
+- **代码质量**: 4 层架构清晰，无已知 Bug
 
 ### 🔄 当前分支
 
-- **主分支**: `main`
-- **开发分支**: `refactor/project-structure` (已完成重构，待合并)
+- **主分支**: `master`
+- **最新提交**: `6a8f738` - docs: 归档过时文档到 archive/ 目录
+- **远程仓库**: [GitHub](https://github.com/AsaqeLee/ElectromagneticStateSpectrumSemanticizationProject)
+- **状态**: ✅ 开发完成，架构重构已合并，所有测试通过
 
 ---
 
@@ -613,9 +635,15 @@ print(f"加载了 {len(segments)} 个分段")
 
 ### 核心文档
 
-- **[Python/Pipeline 使用指南](docs/USAGE_GUIDE.md)** - 详细的 Python API 和 Pipeline 使用方法
-- **[Bug 修复记录](BUG_FIX_SUMMARY.md)** - 详细调试过程与修复方案
-- **[文档准确性审计](DOCUMENTATION_AUDIT_REPORT.md)** - 文档错误识别与修正报告
+- **[语义编码规范 v2](docs/semantic_encoding_requirements.md)** - `SemanticEncodingV2` 格式标准
+- **[数据格式说明](docs/TASK2_DATA_FORMATS.md)** - IQ 数据与频谱格式详解
+- **[原始需求文档](docs/频谱语义化表征及频谱恢复.md)** - 项目背景与技术要求
+
+### 归档文档
+
+- **[Bug 修复记录](archive/reports/bug_fixes/BUG_FIX_SUMMARY.md)** - 详细调试过程与修复方案
+- **[文档准确性审计](archive/reports/documentation/DOCUMENTATION_AUDIT_REPORT.md)** - 文档错误识别与修正报告
+- **[旧版使用指南](archive/cli_docs/USAGE_GUIDE.md)** - 历史 CLI 工具使用方法
 
 ### 技术规范
 
@@ -633,9 +661,9 @@ print(f"加载了 {len(segments)} 个分段")
 
 如遇到问题或有改进建议，请：
 
-1. 查阅 [USAGE_GUIDE.md](docs/USAGE_GUIDE.md) 详细文档
-2. 检查 [常见问题](#常见问题) 章节
-3. 查看项目 [Issues](../../issues) 或提交新问题
+1. 查阅 [详细文档](#📚-详细文档) 章节
+2. 检查 [常见问题](#❓-常见问题) 章节
+3. 查看项目 [GitHub Issues](https://github.com/AsaqeLee/ElectromagneticStateSpectrumSemanticizationProject/issues) 或提交新问题
 
 ---
 
