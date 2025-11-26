@@ -4,7 +4,7 @@
 > 电磁频谱智能分析与语义化编码系统
 
 [![Python Version](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-33%20passed-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-34%20passed-brightgreen.svg)](tests/)
 [![Architecture](https://img.shields.io/badge/architecture-4%20layers-orange.svg)](#项目架构)
 
 本项目实现《频谱语义化表征及频谱恢复》的完整工程体系，面向 **30–2500 MHz** 频段，提供从信号合成、频谱拼接到语义编码的端到端解决方案。
@@ -121,7 +121,7 @@ pip install -r requirements-dev.txt
 ### 2. 快速验证
 
 ```bash
-# 运行全部测试（33 个测试用例）
+# 运行全部测试（34 个测试用例）
 pytest -q
 
 # 只运行核心功能测试
@@ -406,9 +406,9 @@ python -m src.pipeline.semantic_eval_v2 \
 ## 📚 详细文档
 
 - **[使用指南](docs/USAGE_GUIDE.md)** - Python/Pipeline 详细使用方法
-- **[频谱图像分析报告](SPECTRUM_ANALYSIS_REPORT.md)** - 最新频谱对比分析
 - **[语义编码规范](docs/semantic_encoding_requirements.md)** - v2 格式标准定义
-- **[修复记录](FIXES_SUMMARY.md)** - 核心 Bug 修复与设计决策
+- **[Bug 修复记录](BUG_FIX_SUMMARY.md)** - 详细调试过程与修复方案
+- **[文档准确性审计](DOCUMENTATION_AUDIT_REPORT.md)** - 文档错误识别与修正报告
 
 ---
 
@@ -463,9 +463,9 @@ DEFAULT_WINDOW_CENTERS_MHZ = (
 
 ### 📋 测试状态
 
-- **总测试数**: 33 个
-- **通过率**: 100% (32/32 核心测试)
-- **已知问题**: 1 个业务逻辑测试失败 (`test_high_frequency_jammer` - 不影响主要功能)
+- **总测试数**: 34 个
+- **通过率**: 100% ✅ 所有测试通过
+- **最近修复**: 噪声波动参数优化 (commit `7fc78d9`) - `test_high_frequency_jammer` 现已通过
 
 ### 🔄 当前分支
 
@@ -614,8 +614,8 @@ print(f"加载了 {len(segments)} 个分段")
 ### 核心文档
 
 - **[Python/Pipeline 使用指南](docs/USAGE_GUIDE.md)** - 详细的 Python API 和 Pipeline 使用方法
-- **[频谱分析报告](SPECTRUM_ANALYSIS_REPORT.md)** - 合成数据 vs 真实数据对比分析
-- **[修复记录](FIXES_SUMMARY.md)** - Bug 修复历史与设计决策
+- **[Bug 修复记录](BUG_FIX_SUMMARY.md)** - 详细调试过程与修复方案
+- **[文档准确性审计](DOCUMENTATION_AUDIT_REPORT.md)** - 文档错误识别与修正报告
 
 ### 技术规范
 
