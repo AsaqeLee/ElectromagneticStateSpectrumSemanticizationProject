@@ -20,26 +20,33 @@ power(freq) = {
 
 因此，编码器需要提取：
 
-### 1.1 全局参数（4个字段）
+### 1.1 全局参数（4 个字段 - 使用项目默认值）
 
-| 字段名 | 类型 | 说明 | 示例 |
-|--------|------|------|------|
-| `freq_min_mhz` | float | 频谱下限（MHz） | 30.0 |
-| `freq_max_mhz` | float | 频谱上限（MHz） | 2500.0 |
-| `num_bins` | int | 频谱离散点数量 | 2471 |
-| `noise_floor_db` | float | 底噪功率（dB） | -80.0 |
+| 字段名           | 类型  | 说明            | 默认值 |
+| ---------------- | ----- | --------------- | ------ |
+| `freq_min_mhz`   | float | 频谱下限（MHz） | 30.0   |
+| `freq_max_mhz`   | float | 频谱上限（MHz） | 2500.0 |
+| `num_bins`       | int   | 频谱离散点数量  | 2471   |
+| `noise_floor_db` | float | 底噪功率（dB）  | -60.0  |
 
-### 1.2 干扰区域列表（每个区域3个字段）
+**说明**：
+
+- 这些是项目的标准配置，对应 `DEFAULT_SEMANTIC_*` 常量
+- 频率分辨率：(2500 - 30) / (2471 - 1) = **1.0 MHz**
+- 编码器应使用这些默认值以保证兼容性
+
+### 1.2 干扰区域列表（每个区域 3 个字段）
 
 每个干扰区域定义为一个字典：
 
-| 字段名 | 类型 | 说明 | 示例 |
-|--------|------|------|------|
-| `start_bin` | int | 干扰起始索引（0-based） | 50 |
-| `end_bin` | int | 干扰结束索引（包含） | 90 |
-| `jnr_db` | float | 信噪比（相对底噪的增益，dB） | 25.0 |
+| 字段名      | 类型  | 说明                         | 示例 |
+| ----------- | ----- | ---------------------------- | ---- |
+| `start_bin` | int   | 干扰起始索引（0-based）      | 50   |
+| `end_bin`   | int   | 干扰结束索引（包含）         | 90   |
+| `jnr_db`    | float | 信噪比（相对底噪的增益，dB） | 25.0 |
 
 **注意**：
+
 - 如果频谱中有 N 个不连续的干扰区域，需要提取 N 个这样的字典
 - 区域之间可以不连续（例如：80-120 MHz, 500-520 MHz）
 - 区域之间的空白部分自动填充为 `noise_floor_db`
@@ -55,7 +62,7 @@ power(freq) = {
   "freq_min_mhz": 30.0,
   "freq_max_mhz": 2500.0,
   "num_bins": 2471,
-  "noise_floor_db": -80.0,
+  "noise_floor_db": -60.0,
   "jammer_regions": [
     {
       "start_bin": 50,
@@ -74,11 +81,13 @@ power(freq) = {
 ### 2.2 字段约束
 
 #### 全局参数约束
+
 - `freq_max_mhz > freq_min_mhz`
 - `num_bins >= 2`
 - `noise_floor_db` 范围：典型值在 [-100, -20] dB（取决于环境）
 
 #### 干扰区域约束
+
 - `0 <= start_bin < end_bin < num_bins`
 - `jnr_db > 0`（干扰功率必须高于底噪）
 - 区域之间**不能重叠**：`regions[i].end_bin < regions[i+1].start_bin`
@@ -97,7 +106,7 @@ power(freq) = {
   "freq_min_mhz": 30.0,
   "freq_max_mhz": 2500.0,
   "num_bins": 2471,
-  "noise_floor_db": -80.0,
+  "noise_floor_db": -60.0,
   "jammer_regions": [
     {
       "start_bin": 470,
@@ -109,22 +118,23 @@ power(freq) = {
 ```
 
 **恢复结果**：
-- 30-500 MHz: -80 dB（底噪）
-- 500-1500 MHz: -60 dB（底噪 + JNR = -80 + 20）
-- 1500-2500 MHz: -80 dB（底噪）
+
+- 30-500 MHz: -60 dB（底噪）
+- 500-1500 MHz: -40 dB（底噪 + JNR = -60 + 20）
+- 1500-2500 MHz: -60 dB（底噪）
 
 ---
 
 ### 示例 2：多个不连续干扰区域
 
-**场景**：5个分散的干扰信号
+**场景**：5 个分散的干扰信号
 
 ```json
 {
   "freq_min_mhz": 30.0,
   "freq_max_mhz": 2500.0,
   "num_bins": 2471,
-  "noise_floor_db": -80.0,
+  "noise_floor_db": -60.0,
   "jammer_regions": [
     {
       "start_bin": 50,
@@ -161,9 +171,10 @@ power(freq) = {
 ```
 
 **恢复结果**：
-- 干扰区域：5个独立的台阶
-- 空白区域（约76%）：保持底噪 -80 dB
-- 干扰区域（约24%）：功率范围 -65 dB 到 -55 dB
+
+- 干扰区域：5 个独立的台阶
+- 空白区域（约 76%）：保持底噪 -60 dB
+- 干扰区域（约 24%）：功率范围 -45 dB 到 -35 dB
 
 ---
 
@@ -176,13 +187,14 @@ power(freq) = {
   "freq_min_mhz": 30.0,
   "freq_max_mhz": 2500.0,
   "num_bins": 2471,
-  "noise_floor_db": -80.0,
+  "noise_floor_db": -60.0,
   "jammer_regions": []
 }
 ```
 
 **恢复结果**：
-- 整个 30-2500 MHz 均为 -80 dB
+
+- 整个 30-2500 MHz 均为 -60 dB
 
 ---
 
@@ -201,16 +213,17 @@ def freq_to_bin(freq_mhz: float, freq_min: float, freq_max: float, num_bins: int
 ```
 
 **示例**：
+
 - 频率范围：30-2500 MHz
 - 点数：2471
 - 分辨率：(2500 - 30) / (2471 - 1) ≈ 1.0 MHz
 
-| 频率（MHz） | bin 索引 | 计算 |
-|------------|---------|------|
-| 30.0 | 0 | (30 - 30) / 1.0 = 0 |
-| 80.0 | 50 | (80 - 30) / 1.0 = 50 |
-| 500.0 | 470 | (500 - 30) / 1.0 = 470 |
-| 2500.0 | 2470 | (2500 - 30) / 1.0 = 2470 |
+| 频率（MHz） | bin 索引 | 计算                     |
+| ----------- | -------- | ------------------------ |
+| 30.0        | 0        | (30 - 30) / 1.0 = 0      |
+| 80.0        | 50       | (80 - 30) / 1.0 = 50     |
+| 500.0       | 470      | (500 - 30) / 1.0 = 470   |
+| 2500.0      | 2470     | (2500 - 30) / 1.0 = 2470 |
 
 ### 4.2 bin 索引 → 频率
 
@@ -281,12 +294,12 @@ def encode_spectrum(freq_mhz: np.ndarray, power_db: np.ndarray) -> dict:
 
 编码器需要调整的参数：
 
-| 参数 | 说明 | 推荐值 |
-|------|------|--------|
-| 底噪估计方法 | 如何从频谱估计底噪 | 10th percentile |
-| 检测门限 | 超过此值认为是干扰 | 底噪 + 6 dB |
-| 最小区域宽度 | 忽略小于此宽度的区域 | 5 个 bin |
-| 区域合并距离 | 相邻区域距离小于此值则合并 | 3 个 bin |
+| 参数         | 说明                       | 推荐值          |
+| ------------ | -------------------------- | --------------- |
+| 底噪估计方法 | 如何从频谱估计底噪         | 10th percentile |
+| 检测门限     | 超过此值认为是干扰         | 底噪 + 6 dB     |
+| 最小区域宽度 | 忽略小于此宽度的区域       | 5 个 bin        |
+| 区域合并距离 | 相邻区域距离小于此值则合并 | 3 个 bin        |
 
 ---
 
@@ -325,11 +338,11 @@ def evaluate_encoding_quality(original_power: np.ndarray,
 
 ### 6.2 质量要求
 
-| 指标 | 目标值 | 说明 |
-|------|--------|------|
-| MAE | < 2 dB | 平均误差小于2dB |
-| Max Error | < 5 dB | 最大误差小于5dB |
-| 压缩率 | > 50:1 | 至少压缩50倍 |
+| 指标      | 目标值 | 说明             |
+| --------- | ------ | ---------------- |
+| MAE       | < 2 dB | 平均误差小于 2dB |
+| Max Error | < 5 dB | 最大误差小于 5dB |
+| 压缩率    | > 50:1 | 至少压缩 50 倍   |
 
 ---
 
@@ -338,9 +351,10 @@ def evaluate_encoding_quality(original_power: np.ndarray,
 ### 7.1 无干扰场景
 
 如果整个频谱都是底噪：
+
 ```json
 {
-  "noise_floor_db": -80.0,
+  "noise_floor_db": -60.0,
   "jammer_regions": []
 }
 ```
@@ -348,12 +362,11 @@ def evaluate_encoding_quality(original_power: np.ndarray,
 ### 7.2 满频段干扰
 
 如果整个频段都是干扰：
+
 ```json
 {
-  "noise_floor_db": -80.0,
-  "jammer_regions": [
-    {"start_bin": 0, "end_bin": 2470, "jnr_db": 30.0}
-  ]
+  "noise_floor_db": -60.0,
+  "jammer_regions": [{ "start_bin": 0, "end_bin": 2470, "jnr_db": 30.0 }]
 }
 ```
 
@@ -361,23 +374,23 @@ def evaluate_encoding_quality(original_power: np.ndarray,
 
 对于功率逐渐变化的区域（例如扫频干扰），有两种处理方式：
 
-**方式1：分段近似**（推荐）
+**方式 1：分段近似**（推荐）
+
 ```json
 {
   "jammer_regions": [
-    {"start_bin": 100, "end_bin": 199, "jnr_db": 20.0},
-    {"start_bin": 200, "end_bin": 299, "jnr_db": 25.0},
-    {"start_bin": 300, "end_bin": 399, "jnr_db": 30.0}
+    { "start_bin": 100, "end_bin": 199, "jnr_db": 20.0 },
+    { "start_bin": 200, "end_bin": 299, "jnr_db": 25.0 },
+    { "start_bin": 300, "end_bin": 399, "jnr_db": 30.0 }
   ]
 }
 ```
 
-**方式2：取平均值**（简化）
+**方式 2：取平均值**（简化）
+
 ```json
 {
-  "jammer_regions": [
-    {"start_bin": 100, "end_bin": 399, "jnr_db": 25.0}
-  ]
+  "jammer_regions": [{ "start_bin": 100, "end_bin": 399, "jnr_db": 25.0 }]
 }
 ```
 
@@ -462,13 +475,15 @@ print(f"Compression: {quality['compression_ratio']:.1f}:1")
 
 ### 9.1 编码器需要提供的输出
 
-**4个全局字段**：
+**4 个全局字段**：
+
 1. `freq_min_mhz` - 频率下限
 2. `freq_max_mhz` - 频率上限
 3. `num_bins` - 点数
 4. `noise_floor_db` - 底噪
 
-**N个区域，每个3个字段**：
+**N 个区域，每个 3 个字段**：
+
 1. `start_bin` - 起始索引
 2. `end_bin` - 结束索引
 3. `jnr_db` - 信噪比
@@ -484,7 +499,7 @@ for region in jammer_regions:
         noise_floor_db + region["jnr_db"]
 ```
 
-**6行代码，O(N)复杂度。**
+**6 行代码，O(N)复杂度。**
 
 ### 9.3 关键优势
 
@@ -498,6 +513,7 @@ for region in jammer_regions:
 ## 10. 联系方式与反馈
 
 如有疑问，请提供：
+
 1. 具体的测试用例（频谱数据）
 2. 编码器输出的 JSON
 3. 遇到的问题描述

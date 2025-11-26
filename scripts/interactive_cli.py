@@ -44,7 +44,7 @@ try:  # pragma: no cover - 作为模块导入时使用相对导入
     from ..signal.spectrum import compute_power_spectrum
     from ..signal.stitcher import SpectrumSegment, stitch_segments, StitchMode
     from ..semantics.decode import decode_file
-    from ..pipeline.semantic_eval import _load_reference, _build_semantic_axis, _validate_alignment
+    from ..pipeline.semantic.semantic_eval import _load_reference, _build_semantic_axis, _validate_alignment
 except ImportError:  # pragma: no cover - 直接 python 跑本文件时兜底
     from signal.spectrum_composer import SpectrumComposerConfig, add_jammer, compose_spectrum
     from core.config import DEFAULT_WINDOW_CENTERS_MHZ
@@ -52,7 +52,7 @@ except ImportError:  # pragma: no cover - 直接 python 跑本文件时兜底
     from signal.spectrum import compute_power_spectrum
     from signal.stitcher import SpectrumSegment, stitch_segments, StitchMode
     from semantics.decode import decode_file
-    from pipeline.semantic_eval import _load_reference, _build_semantic_axis, _validate_alignment
+    from pipeline.semantic.semantic_eval import _load_reference, _build_semantic_axis, _validate_alignment
 
 
 # ===========================

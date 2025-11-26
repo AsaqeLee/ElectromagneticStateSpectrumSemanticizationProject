@@ -137,8 +137,9 @@ def compose_spectrum(
     freq_axis = cfg.freq_axis_mhz
 
     # 初始化为随机波动的底噪（更真实）
-    # 底噪 = 基准值 + 随机波动（基于真实数据分析：±10dB波动，使用5dB标准差）
-    noise_variation_db = rng.standard_normal(len(freq_axis)) * 5.0  # 5dB标准差 ≈ ±10dB范围
+    # 底噪 = 基准值 + 小幅随机波动（避免噪声峰值超过干扰信号）
+    # 使用 1dB 标准差，确保 99.7% 的噪声在 ±3dB 范围内，不会掩盖 JNR≥15dB 的干扰
+    noise_variation_db = rng.standard_normal(len(freq_axis)) * 1.0  # 1dB标准差 ≈ ±3dB范围
     noise_db = cfg.noise_floor_db + noise_variation_db
     power_linear = 10.0 ** (noise_db / 10.0)
 

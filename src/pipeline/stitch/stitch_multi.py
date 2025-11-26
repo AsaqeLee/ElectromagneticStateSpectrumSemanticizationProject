@@ -16,17 +16,10 @@ from typing import List, Tuple
 import matplotlib.pyplot as plt
 import numpy as np
 
-# Fix Windows console encoding
-if sys.platform == "win32":
-    import io
-
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
-
 try:  # pragma: no cover - ????????
-    from ..core.config import DEFAULT_WINDOW_CENTERS_MHZ
-    from ..core.schemas import IQData, SamplingConfig
-    from ..signal.spectrum import compute_power_spectrum
+    from ...core.config import DEFAULT_WINDOW_CENTERS_MHZ
+    from ...core.schemas import IQData, SamplingConfig
+    from ...signal.spectrum import compute_power_spectrum
 except ImportError:  # pragma: no cover
     sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
     from core.config import DEFAULT_WINDOW_CENTERS_MHZ
@@ -251,5 +244,14 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    # Fix Windows console encoding for CLI use
+    if sys.platform == "win32":
+        import io
+        try:
+            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+            sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+    
     main()
 

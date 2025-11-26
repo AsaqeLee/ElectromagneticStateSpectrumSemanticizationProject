@@ -30,7 +30,7 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from src.signal.spectrum_composer import SpectrumComposerConfig, JammerSpec, compose_spectrum
 from src.signal.stitcher import StitchMode
-from src.pipeline.stitch_real_data import stitch_from_bin_directory
+from src.pipeline.stitch.stitch_real_data import stitch_from_bin_directory
 from src.io.reader import BinDataType
 from src.semantics.decode import load_semantic_file
 from src.semantics.decode_multi import decode_semantic_auto
@@ -272,4 +272,23 @@ def main():
 
 
 if __name__ == "__main__":
+    # Fix Windows 控制台编码，避免在非 UTF-8 终端下打印中文报错
+    if sys.platform == "win32":
+        import io
+
+        try:
+            sys.stdout = io.TextIOWrapper(
+                sys.stdout.buffer,
+                encoding="utf-8",
+                errors="replace",
+            )
+            sys.stderr = io.TextIOWrapper(
+                sys.stderr.buffer,
+                encoding="utf-8",
+                errors="replace",
+            )
+        except (AttributeError, ValueError):
+            # 某些环境下 sys.stdout 可能不暴露 buffer，忽略即可
+            pass
+
     sys.exit(main())

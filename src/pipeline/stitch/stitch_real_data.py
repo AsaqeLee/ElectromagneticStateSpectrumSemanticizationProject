@@ -11,23 +11,21 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-# Fix Windows console encoding
-if sys.platform == "win32":
-    import io
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
-
 try:
+    # 优先作为 src 包内部模块导入（正常通过 src.pipeline.stitch 使用时）
     from ..io.reader import load_bin_segments, load_iq_file, BinDataType
     from ..signal.stitcher import SpectrumSegment, stitch_segments, StitchMode
     from ..signal.spectrum import compute_power_spectrum
     from ..core.schemas import SamplingConfig
 except ImportError:
-    sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
-    from io.reader import load_bin_segments, load_iq_file, BinDataType
-    from signal.stitcher import SpectrumSegment, stitch_segments, StitchMode
-    from signal.spectrum import compute_power_spectrum
-    from core.schemas import SamplingConfig
+    # 兼容直接运行本文件的场景：将仓库根目录加入 sys.path 后按 src 包导入
+    root_dir = Path(__file__).resolve().parents[2]
+    if str(root_dir) not in sys.path:
+        sys.path.append(str(root_dir))
+    from src.io.reader import load_bin_segments, load_iq_file, BinDataType
+    from src.signal.stitcher import SpectrumSegment, stitch_segments, StitchMode
+    from src.signal.spectrum import compute_power_spectrum
+    from src.core.schemas import SamplingConfig
 
 
 def stitch_from_bin_directory(
@@ -231,4 +229,18 @@ def main():
 
 
 if __name__ == "__main__":
+    # Fix Windows console encoding for CLI use
+    if sys.platform == "win32":
+        import io
+        try:
+            sys.stdout = io.TextIOWrapper(
+                sys.stdout.buffer, encoding="utf-8", errors="replace"
+            )
+            sys.stderr = io.TextIOWrapper(
+                sys.stderr.buffer, encoding="utf-8", errors="replace"
+            )
+        except (AttributeError, ValueError):
+            # 某些环境下 sys.stdout 可能不暴露 buffer，忽略即可
+            pass
+
     main()

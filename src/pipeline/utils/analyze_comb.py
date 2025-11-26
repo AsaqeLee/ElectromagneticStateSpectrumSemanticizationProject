@@ -10,9 +10,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 try:  # pragma: no cover - 兼容直接运行脚本
-    from ..core.schemas import IQData, SamplingConfig
-    from ..signal.spectrum import compute_power_spectrum
-    from ..viz.plots import plot_spectrum
+    from ...core.schemas import IQData, SamplingConfig
+    from ...signal.spectrum import compute_power_spectrum
+    from ...viz.plots import plot_spectrum
 except ImportError:  # pragma: no cover
     sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
     from core.schemas import IQData, SamplingConfig

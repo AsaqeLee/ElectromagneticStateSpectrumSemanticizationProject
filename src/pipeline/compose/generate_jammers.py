@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 try:  # pragma: no cover - 兼容直接运行脚本
-    from ..signal.jammers import JAMMER_REGISTRY, JammerConfig, generate_jammer
+    from ...signal.jammers import JAMMER_REGISTRY, JammerConfig, generate_jammer
 except ImportError:  # pragma: no cover
     sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
     from signal.jammers import JAMMER_REGISTRY, JammerConfig, generate_jammer

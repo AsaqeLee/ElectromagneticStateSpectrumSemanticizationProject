@@ -185,12 +185,20 @@ def stitch_segments(
 
     # 逐个拼接分段
     for seg in segments:
-        # 计算分段在全局轴上的索引（使用searchsorted避免浮点精度问题）
-        # 找到每个分段频率点最接近的全局轴索引
-        idx = np.searchsorted(global_axis, seg.freq_mhz)
+        # 计算分段在全局轴上的索引
+        # 注意：np.searchsorted 返回的是“右侧插入点”，直接使用会系统性偏向右侧，
+        # 导致频率误差接近一个步长，从而被下面的校验逻辑全部过滤掉。
+        # 这里改为“在左右邻居中选择距离最近的索引”，保证浮点误差不至于导致整段被丢弃。
+        upper = np.searchsorted(global_axis, seg.freq_mhz)
+        upper = np.clip(upper, 0, global_axis.size - 1)
+        lower = np.clip(upper - 1, 0, global_axis.size - 1)
 
-        # 修正边界：确保索引在有效范围内
-        idx = np.clip(idx, 0, global_axis.size - 1)
+        err_lower = np.abs(global_axis[lower] - seg.freq_mhz)
+        err_upper = np.abs(global_axis[upper] - seg.freq_mhz)
+
+        # 选择误差更小的那个索引作为最终映射位置
+        choose_upper = err_upper <= err_lower
+        idx = np.where(choose_upper, upper, lower)
 
         # 验证频率对齐误差，如果超过步长的一半则跳过该点
         freq_error = np.abs(global_axis[idx] - seg.freq_mhz)
