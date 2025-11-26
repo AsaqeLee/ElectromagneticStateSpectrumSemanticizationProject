@@ -7,10 +7,11 @@ docs/python
 docs/tasks-raw.txt
 notebooks
 tests
-
+archive
 .pytest_cache
 *__pycache__
 
 jam.m
 nul
 !README.md
+wheel

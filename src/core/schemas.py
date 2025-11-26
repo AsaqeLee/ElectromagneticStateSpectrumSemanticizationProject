@@ -7,9 +7,15 @@ from typing import List, Optional, Sequence
 import numpy as np
 
 
-# 语义频谱默认覆盖范围与分辨率（可通过 SemanticParams 覆盖）
+# 语义频谱默认配置（按最新需求约定）
+# 说明：
+# - 这些默认值在“语义恢复频谱”场景下视为固定配置；
+# - 之所以集中在此处，是为了在需要调整频段 / 点数 / 底噪时只改一处；
+# - 上层如需覆盖，可显式传入 freq_min_mhz/freq_max_mhz/num_bins/noise_floor_db。
 DEFAULT_SEMANTIC_FREQ_MIN_MHZ = 30.0
 DEFAULT_SEMANTIC_FREQ_MAX_MHZ = 2500.0
+DEFAULT_SEMANTIC_NUM_BINS = 2471
+DEFAULT_SEMANTIC_NOISE_FLOOR_DB = -80.0
 
 
 @dataclass
@@ -214,10 +220,10 @@ class SemanticEncodingV2:
     - jammer_regions: 多个不重叠干扰区域，每个区域用 start_bin/end_bin/jnr_db 描述。
     """
 
-    freq_min_mhz: float
-    freq_max_mhz: float
-    num_bins: int
-    noise_floor_db: float
+    freq_min_mhz: float = DEFAULT_SEMANTIC_FREQ_MIN_MHZ
+    freq_max_mhz: float = DEFAULT_SEMANTIC_FREQ_MAX_MHZ
+    num_bins: int = DEFAULT_SEMANTIC_NUM_BINS
+    noise_floor_db: float = DEFAULT_SEMANTIC_NOISE_FLOOR_DB
     jammer_regions: List[JammerRegionV2] = field(default_factory=list)
 
     def validate(self) -> None:
@@ -268,10 +274,18 @@ class SemanticEncodingV2:
                 )
             )
         obj = cls(
-            freq_min_mhz=float(data["freq_min_mhz"]),
-            freq_max_mhz=float(data["freq_max_mhz"]),
-            num_bins=int(data["num_bins"]),
-            noise_floor_db=float(data["noise_floor_db"]),
+            freq_min_mhz=float(
+                data.get("freq_min_mhz", DEFAULT_SEMANTIC_FREQ_MIN_MHZ)
+            ),
+            freq_max_mhz=float(
+                data.get("freq_max_mhz", DEFAULT_SEMANTIC_FREQ_MAX_MHZ)
+            ),
+            num_bins=int(
+                data.get("num_bins", DEFAULT_SEMANTIC_NUM_BINS)
+            ),
+            noise_floor_db=float(
+                data.get("noise_floor_db", DEFAULT_SEMANTIC_NOISE_FLOOR_DB)
+            ),
             jammer_regions=regions,
         )
         obj.validate()

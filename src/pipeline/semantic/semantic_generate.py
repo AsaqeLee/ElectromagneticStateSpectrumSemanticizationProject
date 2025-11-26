@@ -18,9 +18,17 @@
       ]
     }
 
-默认生成 10 组数据，保存到 data_semantic 目录下:
+输出说明:
 
-    semantic_case01.json, semantic_case02.json, ...
+    默认生成 10 组随机语义数据，保存到 data_semantic/ 目录:
+    
+        semantic_case01.json
+        semantic_case02.json
+        ...
+        semantic_case10.json
+    
+    注意: 这些文件由程序自动生成，每次运行会覆盖已有文件。
+         如需固定测试用例，请单独保存到其他目录。
 """
 from __future__ import annotations
 

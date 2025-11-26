@@ -24,11 +24,25 @@ except Exception:
 # Fix Windows console encoding
 if sys.platform == "win32":
     import io
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
-# 添加 src 到路径
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+    try:
+        sys.stdout = io.TextIOWrapper(
+            sys.stdout.buffer,
+            encoding="utf-8",
+            errors="replace",
+        )
+        sys.stderr = io.TextIOWrapper(
+            sys.stderr.buffer,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except (AttributeError, ValueError):
+        # 在某些环境下 stdout 可能没有 buffer 属性，忽略即可
+        pass
+
+# 添加项目根目录到 sys.path，确保可以导入 src 包
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
 from src.signal.spectrum_composer import (
     SpectrumComposerConfig,
@@ -44,7 +58,25 @@ from src.signal.stitcher import (
 from src.pipeline.stitch.stitch_real_data import stitch_from_bin_directory
 from src.io.reader import BinDataType
 from src.semantics.decode import decode_semantic, load_semantic_file
-from src.core.schemas import SemanticParams
+from src.semantics.decode_v2 import decode_semantic_v2, load_semantic_v2_file
+from src.core.schemas import (
+    SemanticParams,
+    DEFAULT_SEMANTIC_FREQ_MIN_MHZ,
+    DEFAULT_SEMANTIC_FREQ_MAX_MHZ,
+    DEFAULT_SEMANTIC_NUM_BINS,
+    DEFAULT_SEMANTIC_NOISE_FLOOR_DB,
+)
+
+
+# 干扰类型选项表：内部使用英文标识，对用户展示中文描述
+JAMMER_TYPE_CHOICES = [
+    ("noise_fm", "调频噪声干扰"),
+    ("single_tone", "单音干扰"),
+    ("multi_tone", "多音干扰"),
+    ("comb", "梳状干扰"),
+    ("partial_band_noise", "部分频带噪声干扰"),
+    ("sweep", "扫频干扰"),
+]
 
 
 def save_spectrum_png(freq_mhz: np.ndarray, power_db: np.ndarray, output_path: Path, title: str = "") -> None:
@@ -155,26 +187,30 @@ def task1_interactive():
         iq_length=iq_length,
     )
 
-    # 添加干扰
+    # 添加干扰（使用数字菜单选择类型，避免手敲长英文单词）
     print("\n➤ 添加干扰信号")
-    print("  可用类型: noise_fm, single_tone, multi_tone, comb, partial_band_noise, sweep")
+    print("  可用类型（输入对应编号即可）：")
+    for idx, (jam_type, desc) in enumerate(JAMMER_TYPE_CHOICES, start=1):
+        print(f"    {idx}. {desc} ({jam_type})")
 
-    jammers = []
     while True:
-        print(f"\n  当前已添加 {len(jammers)} 个干扰")
-        choice = get_input("  添加干扰? (y/n)", "n")
-        if choice.lower() != 'y':
+        print(f"\n  当前已添加 {len(cfg.jammers)} 个干扰")
+        choice = get_input("  继续添加干扰? (y/n)", "n")
+        if choice.lower() != "y":
             break
 
-        jam_type = get_input("    干扰类型", "single_tone")
-        if jam_type not in ["noise_fm", "single_tone", "multi_tone", "comb", "partial_band_noise", "sweep"]:
-            print("    ⚠️ 无效的干扰类型")
+        type_index = get_int("    选择干扰类型编号", 2)
+        if not (1 <= type_index <= len(JAMMER_TYPE_CHOICES)):
+            print("    ⚠️ 无效编号，请重新输入")
             continue
 
+        jam_type = JAMMER_TYPE_CHOICES[type_index - 1][0]
         center_freq = get_float("    中心频率 (MHz)", 500.0)
         jnr_db = get_float("    JNR (dB)", 15.0)
 
-        cfg.jammers.append(JammerSpec(jam_type=jam_type, center_freq_mhz=center_freq, jnr_db=jnr_db))
+        cfg.jammers.append(
+            JammerSpec(jam_type=jam_type, center_freq_mhz=center_freq, jnr_db=jnr_db)
+        )
         print(f"    ✓ 已添加: {jam_type} @ {center_freq} MHz, JNR={jnr_db} dB")
 
     if not cfg.jammers:
@@ -440,9 +476,69 @@ def task3_interactive():
             print(f"  ⚠️ 文件不存在: {json_path}")
             return
 
+        # 读取 JSON 内容，自动识别 v1/v2 语义格式
+        try:
+            raw = json_path.read_text(encoding="utf-8")
+            data = json.loads(raw)
+        except Exception as e:
+            print(f"  ✗ 加载失败: {e}")
+            return
+
+        # v2: SemanticEncodingV2 格式（freq_min_mhz/freq_max_mhz/num_bins/noise_floor_db/jammer_regions）
+        if isinstance(data, dict) and "jammer_regions" in data and "num_bins" in data:
+            print("  ✓ 检测到 v2 语义格式 (SemanticEncodingV2)")
+            try:
+                params_v2 = load_semantic_v2_file(json_path)
+            except Exception as e:
+                print(f"  ✗ v2 参数加载失败: {e}")
+                return
+
+            # 按“全局默认语义轴”覆写四个核心字段
+            params_v2.freq_min_mhz = DEFAULT_SEMANTIC_FREQ_MIN_MHZ
+            params_v2.freq_max_mhz = DEFAULT_SEMANTIC_FREQ_MAX_MHZ
+            params_v2.num_bins = DEFAULT_SEMANTIC_NUM_BINS
+            params_v2.noise_floor_db = DEFAULT_SEMANTIC_NOISE_FLOOR_DB
+
+            try:
+                power_db = decode_semantic_v2(params_v2)
+            except Exception as e:
+                print(f"  ✗ v2 解码失败: {e}")
+                return
+
+            freq_mhz = np.linspace(
+                DEFAULT_SEMANTIC_FREQ_MIN_MHZ,
+                DEFAULT_SEMANTIC_FREQ_MAX_MHZ,
+                DEFAULT_SEMANTIC_NUM_BINS,
+            )
+
+            print(f"  ✓ 恢复成功")
+            print(f"    频率范围: {freq_mhz.min():.2f} - {freq_mhz.max():.2f} MHz")
+            print(f"    功率范围: {power_db.min():.2f} - {power_db.max():.2f} dB")
+            print(f"    分辨率: {(freq_mhz[1] - freq_mhz[0]):.2f} MHz")
+
+            save_choice = get_input("\n  保存结果? (y/n)", "y")
+            if save_choice.lower() == "y":
+                output_dir = Path(get_input("    输出目录", "data/cli_results"))
+                output_dir.mkdir(parents=True, exist_ok=True)
+
+                npz_path = output_dir / "recovered_spectrum_v2.npz"
+                np.savez(npz_path, freq_mhz=freq_mhz, power_db=power_db)
+                print(f"  ✓ 频谱已保存: {npz_path}")
+
+                # 保留原始语义 JSON
+                semantic_copy = output_dir / "semantic_params_v2.json"
+                semantic_copy.write_text(raw, encoding="utf-8")
+                print(f"  ✓ 语义参数已保存: {semantic_copy}")
+
+                png_path = output_dir / "recovered_spectrum_v2.png"
+                save_spectrum_png(freq_mhz, power_db, png_path, title="Recovered Spectrum (v2)")
+
+            return
+
+        # v1: 走原有 SemanticParams 路径
         try:
             params = load_semantic_file(json_path)
-            print("  ✓ 参数加载成功")
+            print("  ✓ 检测到 v1 语义格式 (SemanticParams)")
         except Exception as e:
             print(f"  ✗ 加载失败: {e}")
             return
@@ -477,7 +573,7 @@ def task3_interactive():
             freq_max_mhz=2500.0,
         )
 
-    # 解码
+    # 解码（仅 v1 路径会走到这里）
     print("\n➤ 恢复频谱...")
     try:
         params.validate()
@@ -491,7 +587,7 @@ def task3_interactive():
 
         # 保存
         save_choice = get_input("\n  保存结果? (y/n)", "y")
-        if save_choice.lower() == 'y':
+        if save_choice.lower() == "y":
             output_dir = Path(get_input("    输出目录", "data/cli_results"))
             output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -501,7 +597,7 @@ def task3_interactive():
 
             # 保存语义参数
             json_path = output_dir / "semantic_params.json"
-            json_path.write_text(json.dumps(params.to_dict(), indent=2, ensure_ascii=False), encoding='utf-8')
+            json_path.write_text(json.dumps(params.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8")
             print(f"  ✓ 参数已保存: {json_path}")
 
             # 保存恢复频谱图
