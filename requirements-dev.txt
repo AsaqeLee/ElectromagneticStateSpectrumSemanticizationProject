@@ -1,7 +1,6 @@
-pytest
+pytest<9
 mypy
 ruff
-black
+black<25
 isort
 pre-commit
-
