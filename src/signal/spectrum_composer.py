@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 import numpy as np
 
@@ -23,7 +23,7 @@ class JammerSpec:
     jam_type: str  # 干扰类型：noise_fm, single_tone, multi_tone, comb, partial_band_noise, sweep
     center_freq_mhz: float  # 干扰中心频率 MHz
     jnr_db: float = 15.0  # 干扰相对噪声比 dB
-    bandwidth_mhz: float | None = None  # 干扰带宽 MHz（可选，由干扰类型自动确定）
+    bandwidth_mhz: Optional[float] = None  # 干扰带宽 MHz（可选，由干扰类型自动确定）
 
 
 @dataclass
@@ -117,7 +117,7 @@ def _interpolate_spectrum(
 
 def compose_spectrum(
     cfg: SpectrumComposerConfig,
-    rng: np.random.Generator | None = None,
+    rng: Optional[np.random.Generator] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """合成宽带功率谱。
 

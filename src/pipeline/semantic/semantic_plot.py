@@ -9,10 +9,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 try:  # pragma: no cover
-    from ...semantics.decode import decode_file
+    from ...semantics.decode_v2 import decode_file_v2
 except ImportError:  # pragma: no cover
     sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
-    from semantics.decode import decode_file
+    from semantics.decode_v2 import decode_file_v2
 
 
 def _load_reference(path: Path) -> tuple[np.ndarray, np.ndarray]:
@@ -25,7 +25,7 @@ def _load_reference(path: Path) -> tuple[np.ndarray, np.ndarray]:
 
 
 def _build_semantic_axis(params) -> np.ndarray:
-    return np.linspace(params.freq_min_mhz, params.freq_max_mhz, params.fenbianlv)
+    return np.linspace(params.freq_min_mhz, params.freq_max_mhz, params.num_bins)
 
 
 def _validate_alignment(ref_axis: np.ndarray, semantic_axis: np.ndarray) -> None:
@@ -56,7 +56,7 @@ def main() -> None:
     parser.add_argument("--png", type=Path, default=Path("data/semantic_plot.png"), help="输出图像路径")
     args = parser.parse_args()
 
-    params, recovered = decode_file(args.semantic)
+    params, recovered = decode_file_v2(args.semantic)
     freq_semantic = _build_semantic_axis(params)
 
     if recovered.size != freq_semantic.size:

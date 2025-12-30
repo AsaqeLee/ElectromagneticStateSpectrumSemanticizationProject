@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, List, Sequence
+from typing import Iterable, List, Sequence, Optional
 
 try:
     import yaml
@@ -76,7 +76,7 @@ def _load_dict_from_file(path: Path) -> dict:
     raise ValueError(f"不支持的配置格式: {suffix}")
 
 
-def load_config(path: str | None = None, overrides: dict | None = None) -> ProjectConfig:
+def load_config(path: Optional[str] = None, overrides: Optional[dict] = None) -> ProjectConfig:
     """加载工程配置，path 与 overrides 至少提供一个。
 
     - path: YAML/JSON 文件路径；

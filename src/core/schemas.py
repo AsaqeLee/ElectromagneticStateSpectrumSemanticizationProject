@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Sequence
+from typing import List, Optional
 
 import numpy as np
 
@@ -14,8 +14,8 @@ import numpy as np
 # - 上层如需覆盖，可显式传入 freq_min_mhz/freq_max_mhz/num_bins/noise_floor_db。
 DEFAULT_SEMANTIC_FREQ_MIN_MHZ = 30.0
 DEFAULT_SEMANTIC_FREQ_MAX_MHZ = 2500.0
-DEFAULT_SEMANTIC_NUM_BINS = 2471
-DEFAULT_SEMANTIC_NOISE_FLOOR_DB = -80.0
+DEFAULT_SEMANTIC_NUM_BINS = 24701
+DEFAULT_SEMANTIC_NOISE_FLOOR_DB = -68.0
 
 
 @dataclass
@@ -24,7 +24,7 @@ class SamplingConfig:
 
     sample_rate_hz: float
     center_freq_hz: float
-    fft_size: int = 4096
+    fft_size: int = 40960
 
     @property
     def resolution_hz(self) -> float:
@@ -41,159 +41,6 @@ class BandConfig:
 
     def contains(self, freq_mhz: float) -> bool:
         return self.start_freq_mhz <= freq_mhz <= self.end_freq_mhz
-
-
-@dataclass
-class SemanticParams:
-    """语义参数，根据 `频谱语义化表征及频谱恢复.md` 的字段约定，并结合 30–2500 MHz 场景进行约束。
-
-    字段说明（保持原有拼音命名以兼容现有数据）：
-    - yonghu: 用户ID (user_id)
-    - youwu: 是否有干扰 0/1 (has_jammer)
-    - menxian: 底噪功率 dB (noise_floor_db)
-    - fenbianlv: 频谱离散点个数 (num_bins)
-    - start/end: 干扰区域索引范围
-    - sinr: 干扰相对底噪的能量（dB）
-    - pos_edge/neg_edge: 正/负边缘索引列表
-    - freq_min_mhz/freq_max_mhz: 频谱覆盖范围
-    """
-
-    yonghu: int
-    youwu: int
-    menxian: float
-    pos_edge: List[int]
-    neg_edge: List[int]
-    start: int
-    end: int
-    fenbianlv: int
-    sinr: np.ndarray = field(repr=False)
-    freq_min_mhz: float = DEFAULT_SEMANTIC_FREQ_MIN_MHZ
-    freq_max_mhz: float = DEFAULT_SEMANTIC_FREQ_MAX_MHZ
-
-    # 英文别名属性（推荐使用）
-    @property
-    def user_id(self) -> int:
-        return self.yonghu
-
-    @property
-    def has_jammer(self) -> bool:
-        return self.youwu == 1
-
-    @property
-    def noise_floor_db(self) -> float:
-        return self.menxian
-
-    @property
-    def num_bins(self) -> int:
-        return self.fenbianlv
-
-    @property
-    def resolution_mhz(self) -> float:
-        """语义频谱的频率分辨率（MHz）。"""
-
-        if self.fenbianlv <= 1:
-            return self.freq_max_mhz - self.freq_min_mhz
-        return (self.freq_max_mhz - self.freq_min_mhz) / float(self.fenbianlv - 1)
-
-    def validate(self) -> None:
-        """验证语义参数的完整性和一致性。
-
-        约束规则（按优先级由高到低）：
-        1. 基本数值范围合法（fenbianlv、频率区间）
-        2. start/end 在有效索引范围内且形成闭区间 [start, end]
-        3. pos_edge/neg_edge 索引均在 [0, fenbianlv) 且长度相等
-        4. sinr 非空，且长度为 1 或 end-start+1
-        """
-
-        # 1. 基本范围检查
-        if self.fenbianlv <= 0:
-            raise ValueError("fenbianlv 必须为正整数")
-        if self.freq_max_mhz <= self.freq_min_mhz:
-            raise ValueError(
-                f"freq_max_mhz ({self.freq_max_mhz}) 必须大于 "
-                f"freq_min_mhz ({self.freq_min_mhz})"
-            )
-
-        # 2. start/end 索引范围检查（闭区间 [start, end]）
-        if self.start < 0 or self.end < 0:
-            raise ValueError("start/end 不能为负数")
-        if self.start > self.end:
-            raise ValueError(f"start ({self.start}) 必须 <= end ({self.end})")
-        if self.end >= self.fenbianlv:
-            raise ValueError(
-                f"end ({self.end}) 必须 < fenbianlv ({self.fenbianlv})，"
-                "索引范围应为 [0, fenbianlv-1]"
-            )
-
-        # 3. 边缘索引验证：所有边缘索引必须落在 [0, fenbianlv) 内
-        for i, idx in enumerate(self.pos_edge):
-            if not (0 <= idx < self.fenbianlv):
-                raise ValueError(
-                    f"pos_edge[{i}] = {idx} 越界，有效范围 [0, {self.fenbianlv - 1}]"
-                )
-
-        for i, idx in enumerate(self.neg_edge):
-            if not (0 <= idx < self.fenbianlv):
-                raise ValueError(
-                    f"neg_edge[{i}] = {idx} 越界，有效范围 [0, {self.fenbianlv - 1}]"
-                )
-
-        # 4. 边缘长度一致性检查
-        if len(self.pos_edge) != len(self.neg_edge):
-            raise ValueError(
-                "pos_edge 和 neg_edge 长度必须相等，"
-                f"当前分别为 {len(self.pos_edge)} 和 {len(self.neg_edge)}"
-            )
-
-        # 5. sinr 检查：不能为空，且长度必须匹配区间长度或为统一 JNR
-        if self.sinr.size == 0:
-            raise ValueError("sinr 不能为空")
-
-        expected = self.end - self.start + 1
-        if self.sinr.size not in (1, expected):
-            raise ValueError(
-                f"sinr 长度需为 1（统一 JNR）或 {expected}（逐点 JNR），"
-                f"当前 {self.sinr.size}"
-            )
-
-    @classmethod
-    def from_dict(cls, data: dict) -> "SemanticParams":
-        """从字典构造 SemanticParams，并立即执行合法性校验。"""
-        sinr = np.asarray(data.get("sinr", []), dtype=float)
-        obj = cls(
-            yonghu=int(data["yonghu"]),
-            youwu=int(data["youwu"]),
-            menxian=float(data["menxian"]),
-            pos_edge=list(map(int, data.get("pos_edge", []))),
-            neg_edge=list(map(int, data.get("neg_edge", []))),
-            start=int(data["start"]),
-            end=int(data["end"]),
-            fenbianlv=int(data["fenbianlv"]),
-            sinr=sinr,
-            freq_min_mhz=float(
-                data.get("freq_min_mhz", DEFAULT_SEMANTIC_FREQ_MIN_MHZ)
-            ),
-            freq_max_mhz=float(
-                data.get("freq_max_mhz", DEFAULT_SEMANTIC_FREQ_MAX_MHZ)
-            ),
-        )
-        obj.validate()
-        return obj
-
-    def to_dict(self) -> dict:
-        return {
-            "yonghu": self.yonghu,
-            "youwu": self.youwu,
-            "menxian": self.menxian,
-            "pos_edge": list(self.pos_edge),
-            "neg_edge": list(self.neg_edge),
-            "start": self.start,
-            "end": self.end,
-            "fenbianlv": self.fenbianlv,
-            "sinr": self.sinr.tolist(),
-            "freq_min_mhz": self.freq_min_mhz,
-            "freq_max_mhz": self.freq_max_mhz,
-        }
 
 
 @dataclass

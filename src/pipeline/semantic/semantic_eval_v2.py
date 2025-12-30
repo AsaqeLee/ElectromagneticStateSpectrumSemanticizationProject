@@ -14,12 +14,26 @@ from typing import Optional, Tuple
 import numpy as np
 
 try:  # pragma: no cover
-    from .semantic_eval import _load_reference
     from ...semantics.decode_v2 import decode_file_v2
 except ImportError:  # pragma: no cover
     sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
-    from pipeline.semantic.semantic_eval import _load_reference
     from semantics.decode_v2 import decode_file_v2
+
+
+def _load_reference(path: Path) -> tuple[np.ndarray, np.ndarray]:
+    """加载参考频谱。
+
+    - 若为 npz，则优先使用其中保存的 freq_mhz/power_db；
+    - 若为 npy，则仅视为功率数组，频率轴按 30–2500 MHz 作线性插值生成。
+
+    v1 评估脚本删除后，在此内置一份供 v2 评估复用。
+    """
+    if path.suffix.lower() == ".npz":
+        with np.load(path) as data:
+            return data["freq_mhz"], data["power_db"]
+    power = np.load(path)
+    freq = np.linspace(30, 2500, power.size)
+    return freq, power
 
 
 def _load_reference_with_coverage(

@@ -23,7 +23,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable, List, Tuple
+from typing import Callable, Iterable, List, Tuple, Optional
 
 import numpy as np
 
@@ -43,16 +43,51 @@ try:  # pragma: no cover - 作为模块导入时使用相对导入
     from ..core.schemas import IQData, SamplingConfig
     from ..signal.spectrum import compute_power_spectrum
     from ..signal.stitcher import SpectrumSegment, stitch_segments, StitchMode
-    from ..semantics.decode import decode_file
-    from ..pipeline.semantic.semantic_eval import _load_reference, _build_semantic_axis, _validate_alignment
+    from ..semantics.decode_v2 import decode_file_v2
 except ImportError:  # pragma: no cover - 直接 python 跑本文件时兜底
     from signal.spectrum_composer import SpectrumComposerConfig, add_jammer, compose_spectrum
     from core.config import DEFAULT_WINDOW_CENTERS_MHZ
     from core.schemas import IQData, SamplingConfig
     from signal.spectrum import compute_power_spectrum
     from signal.stitcher import SpectrumSegment, stitch_segments, StitchMode
-    from semantics.decode import decode_file
-    from pipeline.semantic.semantic_eval import _load_reference, _build_semantic_axis, _validate_alignment
+    from semantics.decode_v2 import decode_file_v2
+
+
+def _load_reference(path: Path) -> tuple[np.ndarray, np.ndarray]:
+    """加载参考频谱（npy/npz）。"""
+    if path.suffix.lower() == ".npz":
+        with np.load(path) as data:
+            return data["freq_mhz"], data["power_db"]
+    power = np.load(path)
+    freq = np.linspace(30, 2500, power.size)
+    return freq, power
+
+
+def _build_semantic_axis(params) -> np.ndarray:
+    """按 v2 语义参数构造频率轴。"""
+    return np.linspace(params.freq_min_mhz, params.freq_max_mhz, params.num_bins)
+
+
+def _validate_alignment(ref_axis: np.ndarray, semantic_axis: np.ndarray) -> None:
+    """防止静默错位：频率轴长度与步长必须一致，否则终止。"""
+    if ref_axis.size != semantic_axis.size:
+        raise SystemExit(
+            f"参考谱长度 {ref_axis.size} 与语义谱长度 {semantic_axis.size} 不同，无法对齐评估；请确保 num_bins 与参考谱一致或先重采样"
+        )
+    if not (np.all(np.diff(ref_axis) > 0) and np.all(np.diff(semantic_axis) > 0)):
+        raise SystemExit("参考谱或语义谱频率轴非递增，数据源可能有误")
+    ref_step = float(np.median(np.diff(ref_axis)))
+    sem_step = float(np.median(np.diff(semantic_axis)))
+    if not np.isclose(ref_step, sem_step, rtol=1e-3, atol=1e-6):
+        raise SystemExit(
+            f"频率分辨率不匹配：参考 {ref_step:.6f} MHz, 语义 {sem_step:.6f} MHz；请重采样后再评估"
+        )
+    if not np.isclose(ref_axis[0], semantic_axis[0], atol=ref_step * 2) or not np.isclose(
+        ref_axis[-1], semantic_axis[-1], atol=ref_step * 2
+    ):
+        raise SystemExit(
+            f"频率范围不匹配：参考 [{ref_axis[0]:.3f}, {ref_axis[-1]:.3f}] MHz, 语义 [{semantic_axis[0]:.3f}, {semantic_axis[-1]:.3f}] MHz"
+        )
 
 
 # ===========================
@@ -60,7 +95,7 @@ except ImportError:  # pragma: no cover - 直接 python 跑本文件时兜底
 # ===========================
 
 
-def _input_with_default(prompt: str, default: str | None = None) -> str:
+def _input_with_default(prompt: str, default: Optional[str] = None) -> str:
     """带默认值的输入函数。
 
     空输入时返回默认值；无默认值且空输入会反复提示。
@@ -79,7 +114,12 @@ def _input_with_default(prompt: str, default: str | None = None) -> str:
             return raw
 
 
-def _ask_path(prompt: str, default: Path | None = None, must_exist: bool = True, is_dir: bool | None = None) -> Path:
+def _ask_path(
+    prompt: str,
+    default: Optional[Path] = None,
+    must_exist: bool = True,
+    is_dir: Optional[bool] = None,
+) -> Path:
     """询问路径，并根据需要检查是否存在/是否为目录。
 
     - must_exist=True 时，不存在会提示并重试；
@@ -103,7 +143,7 @@ def _ask_path(prompt: str, default: Path | None = None, must_exist: bool = True,
         return path
 
 
-def _ask_float(prompt: str, default: float | None = None) -> float:
+def _ask_float(prompt: str, default: Optional[float] = None) -> float:
     """询问浮点数，带默认值与重试。"""
 
     default_str = f"{default}" if default is not None else None
@@ -115,7 +155,7 @@ def _ask_float(prompt: str, default: float | None = None) -> float:
             print(f"无法解析为浮点数：{raw}，请重试。")
 
 
-def _ask_int(prompt: str, default: int | None = None) -> int:
+def _ask_int(prompt: str, default: Optional[int] = None) -> int:
     """询问整数，带默认值与重试。"""
 
     default_str = f"{default}" if default is not None else None
@@ -380,7 +420,7 @@ def run_task3_interactive() -> None:
         return
 
     try:
-        params, recovered = decode_file(semantic_path)
+        params, recovered = decode_file_v2(semantic_path)
     except Exception as exc:
         print(f"加载或解析语义 JSON 失败：{exc}")
         return
@@ -399,7 +439,7 @@ def run_task3_interactive() -> None:
     if recovered.size != freq_semantic.size:
         print(
             f"恢复谱长度 {recovered.size} 与语义频点数量 {freq_semantic.size} 不一致，"
-            "请检查 JSON 中的 fenbianlv/start/end/sinr 设置。"
+            "请检查 JSON 中的 num_bins/jammer_regions 设置。"
         )
         return
 
@@ -441,8 +481,6 @@ def run_task3_interactive() -> None:
     max_err = float(np.max(np.abs(diff)))
 
     report = {
-        "yonghu": params.yonghu,
-        "youwu": params.youwu,
         "mae_db": mae,
         "rmse_db": rmse,
         "max_err_db": max_err,
@@ -451,7 +489,9 @@ def run_task3_interactive() -> None:
         "band_max_mhz": band_max,
         "semantic_freq_min_mhz": params.freq_min_mhz,
         "semantic_freq_max_mhz": params.freq_max_mhz,
-        "semantic_resolution_mhz": params.resolution_mhz,
+        "semantic_num_bins": params.num_bins,
+        "semantic_noise_floor_db": params.noise_floor_db,
+        "num_regions": len(params.jammer_regions),
     }
 
     try:

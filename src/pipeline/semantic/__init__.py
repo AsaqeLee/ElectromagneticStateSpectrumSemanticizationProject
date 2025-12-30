@@ -8,8 +8,7 @@
 """
 
 from . import semantic_generate
-from . import semantic_eval
 from . import semantic_eval_v2
 from . import semantic_plot
 
-__all__ = ['semantic_generate', 'semantic_eval', 'semantic_eval_v2', 'semantic_plot']
+__all__ = ['semantic_generate', 'semantic_eval_v2', 'semantic_plot']

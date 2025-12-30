@@ -11,7 +11,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import Sequence
+from typing import Sequence, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -27,7 +27,7 @@ def _ensure_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
 
 
-def _plot_spectrogram(iq: np.ndarray, fs_hz: float, title: str, png_path: Path | None) -> None:
+def _plot_spectrogram(iq: np.ndarray, fs_hz: float, title: str, png_path: Optional[Path]) -> None:
     """简单时频图预览，与 jam.m 的时频预览功能对应。"""
 
     from scipy.signal import spectrogram
@@ -100,7 +100,7 @@ def generate_dataset(
                     need_preview = sample_idx <= preview_samples_per_jnr
                     need_save_spec = spectrogram_save_count[jam_type] < spectrograms_per_type_to_save
                     if need_preview or need_save_spec:
-                        spec_path: Path | None = None
+                        spec_path: Optional[Path] = None
                         if need_save_spec:
                             type_spec_root = spec_root / jam_type
                             spec_index = spectrogram_save_count[jam_type] + 1
@@ -201,4 +201,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

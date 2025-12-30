@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Dict, Tuple
+from typing import Callable, Dict, Tuple, Optional
 
 import numpy as np
 from scipy.signal import butter, sosfiltfilt
@@ -29,7 +29,7 @@ class JammerConfig:
     jnr_db: float = 15.0
 
 
-def _ensure_rng(rng: np.random.Generator | None) -> np.random.Generator:
+def _ensure_rng(rng: Optional[np.random.Generator]) -> np.random.Generator:
     """确保返回一个 np.random.Generator 实例。
 
     支持的输入：
@@ -48,7 +48,7 @@ def _ensure_rng(rng: np.random.Generator | None) -> np.random.Generator:
     raise TypeError(f"rng 必须是 np.random.Generator 或整数种子，当前类型: {type(rng)!r}")
 
 
-def _add_awgn_measured(iq: np.ndarray, snr_db: float, rng: np.random.Generator | None = None) -> np.ndarray:
+def _add_awgn_measured(iq: np.ndarray, snr_db: float, rng: Optional[np.random.Generator] = None) -> np.ndarray:
     """模拟 Matlab `awgn(x, snr, 'measured')` 行为：按输入信号测得功率添加 AWGN。
 
     - snr_db 在这里等价于 JNR（干扰相对噪声功率比）；
@@ -87,7 +87,7 @@ def _lowpass_real(
 def noise_fm_jammer(
     fc_hz: float,
     cfg: JammerConfig,
-    rng: np.random.Generator | None = None,
+    rng: Optional[np.random.Generator] = None,
 ) -> Tuple[np.ndarray, float]:
     """Noise FM 干扰。
 
@@ -122,7 +122,7 @@ def noise_fm_jammer(
 def single_tone_jammer(
     fc_hz: float,
     cfg: JammerConfig,
-    rng: np.random.Generator | None = None,
+    rng: Optional[np.random.Generator] = None,
 ) -> Tuple[np.ndarray, float]:
     """单音干扰，对应 jam.m `single_tone`。"""
 
@@ -138,7 +138,7 @@ def single_tone_jammer(
 def multi_tone_jammer(
     fc_hz: float,
     cfg: JammerConfig,
-    rng: np.random.Generator | None = None,
+    rng: Optional[np.random.Generator] = None,
 ) -> Tuple[np.ndarray, float]:
     """多音干扰，对应 jam.m `multi_tone`。"""
 
@@ -163,7 +163,7 @@ def multi_tone_jammer(
 def comb_jammer(
     fc_hz: float,
     cfg: JammerConfig,
-    rng: np.random.Generator | None = None,
+    rng: Optional[np.random.Generator] = None,
 ) -> Tuple[np.ndarray, float]:
     """梳状谱干扰，对应 jam.m `comb`。"""
 
@@ -191,7 +191,7 @@ def comb_jammer(
 def partial_band_noise_jammer(
     fc_hz: float,
     cfg: JammerConfig,
-    rng: np.random.Generator | None = None,
+    rng: Optional[np.random.Generator] = None,
 ) -> Tuple[np.ndarray, float]:
     """部分带宽噪声干扰，对应 jam.m `partial_band_noise`。"""
 
@@ -211,7 +211,7 @@ def partial_band_noise_jammer(
 def sweep_jammer(
     fc_hz: float,
     cfg: JammerConfig,
-    rng: np.random.Generator | None = None,
+    rng: Optional[np.random.Generator] = None,
 ) -> Tuple[np.ndarray, float]:
     """扫频干扰，对应 jam.m `sweep`。"""
 
@@ -232,7 +232,7 @@ def sweep_jammer(
     return iq_noisy, float(bandwidth)
 
 
-JAMMER_REGISTRY: Dict[str, Callable[[float, JammerConfig, np.random.Generator | None], Tuple[np.ndarray, float]]] = {
+JAMMER_REGISTRY: Dict[str, Callable[[float, JammerConfig, Optional[np.random.Generator]], Tuple[np.ndarray, float]]] = {
     "noise_fm": noise_fm_jammer,
     "single_tone": single_tone_jammer,
     "multi_tone": multi_tone_jammer,
@@ -246,7 +246,7 @@ def generate_jammer(
     jam_type: str,
     fc_hz: float,
     cfg: JammerConfig,
-    rng: np.random.Generator | None = None,
+    rng: Optional[np.random.Generator] = None,
 ) -> Tuple[np.ndarray, float]:
     """统一入口：根据 jam_type 生成干扰信号。
 

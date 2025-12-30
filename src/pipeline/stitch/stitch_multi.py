@@ -11,7 +11,7 @@ import argparse
 import re
 import sys
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -33,7 +33,7 @@ COMB_PATTERN = re.compile(
 )
 
 
-def parse_comb_filename(path: Path) -> Tuple[float, float] | None:
+def parse_comb_filename(path: Path) -> Optional[Tuple[float, float]]:
     """??????????????(MHz)?
 
     ??:comb_130MHz_204.8MHz_11h01m58s.bin  (130.0, 204.8)
@@ -254,4 +254,3 @@ if __name__ == "__main__":
             pass
     
     main()
-

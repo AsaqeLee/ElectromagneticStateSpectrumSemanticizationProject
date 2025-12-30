@@ -37,7 +37,7 @@ import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 import numpy as np
 
@@ -204,7 +204,7 @@ def _make_random_regions(
     num_bins: int,
     max_regions: int,
     min_region_len: int = 5,
-    max_region_len: int | None = None,
+    max_region_len: Optional[int] = None,
 ) -> List[JammerRegion]:
     """根据约束随机生成若干不重叠干扰区间。"""
 
@@ -235,7 +235,7 @@ def _make_random_regions(
     return regions
 
 
-def generate_semantic_samples(num_samples: int, seed: int | None = None) -> List[SemanticEncodingSample]:
+def generate_semantic_samples(num_samples: int, seed: Optional[int] = None) -> List[SemanticEncodingSample]:
     """生成若干语义编码样本，包含多种情况和边界条件。
 
     设计策略：

@@ -18,7 +18,7 @@ from __future__ import annotations
 import re
 from enum import Enum
 from pathlib import Path
-from typing import Generator, Tuple
+from typing import Generator, Tuple, Optional, Union
 
 import h5py
 import numpy as np
@@ -70,8 +70,8 @@ def parse_bin_filename(filename: str, strict: bool = False) -> dict:
 def _load_bin(
     path: Path,
     dtype: BinDataType = BinDataType.INT16,
-    sample_rate_hz: float | None = None,
-    center_freq_hz: float | None = None,
+    sample_rate_hz: Optional[float] = None,
+    center_freq_hz: Optional[float] = None,
 ) -> Tuple[np.ndarray, dict]:
     """加载二进制IQ文件，并对常见错误场景做健壮性处理。
 
@@ -203,9 +203,9 @@ def _load_h5(path: Path) -> Tuple[np.ndarray, dict]:
 
 
 def load_iq_file(
-    path: str | Path,
-    sample_rate_hz: float | None = None,
-    center_freq_hz: float | None = None,
+    path: Union[str, Path],
+    sample_rate_hz: Optional[float] = None,
+    center_freq_hz: Optional[float] = None,
     bin_dtype: BinDataType = BinDataType.INT16,
 ) -> IQData:
     """读取 IQ 文件，补全必要的元数据。
@@ -251,7 +251,7 @@ def load_iq_file(
 
 
 def load_bin_segments(
-    directory: str | Path,
+    directory: Union[str, Path],
     pattern: str = "*.bin",
     bin_dtype: BinDataType = BinDataType.INT16,
 ) -> list[IQData]:

@@ -57,15 +57,19 @@ from src.signal.stitcher import (
 )
 from src.pipeline.stitch.stitch_real_data import stitch_from_bin_directory
 from src.io.reader import BinDataType
-from src.semantics.decode import decode_semantic, load_semantic_file
-from src.semantics.decode_v2 import decode_semantic_v2, load_semantic_v2_file
+from src.semantics.decode_v2 import (
+    decode_semantic_v2 as decode_semantic,
+    load_semantic_v2_file as load_semantic_file,
+)
 from src.core.schemas import (
-    SemanticParams,
     DEFAULT_SEMANTIC_FREQ_MIN_MHZ,
     DEFAULT_SEMANTIC_FREQ_MAX_MHZ,
     DEFAULT_SEMANTIC_NUM_BINS,
     DEFAULT_SEMANTIC_NOISE_FLOOR_DB,
 )
+
+# 任务二+任务三 并集输出（脚本复用）
+import scripts.run_union as run_union
 
 
 # 干扰类型选项表：内部使用英文标识，对用户展示中文描述
@@ -126,6 +130,7 @@ def print_menu():
     print("  2. 任务二：拼接频谱分段")
     print("  3. 任务三：语义参数恢复频谱")
     print("  4. 查看使用指南")
+    print("  11. 任务二+任务三：输出并集频谱 (run_union)")
     print("  5. 退出")
     print("-" * 80)
 
@@ -463,151 +468,86 @@ def task3_interactive():
     print("【任务三】语义参数恢复频谱")
     print("=" * 80)
 
-    print("\n➤ 选择输入方式")
-    print("  1. 从 JSON 文件加载")
-    print("  2. 手动输入参数")
+    # 直接获取 JSON 文件路径
+    json_path = Path(get_input("\n  语义 JSON 文件路径"))
+    if not json_path.exists():
+        print(f"  ⚠️ 文件不存在: {json_path}")
+        return
 
-    choice = get_input("  选择 (1/2)", "1")
+    # 加载语义文件
+    print("\n➤ 加载语义参数...")
+    try:
+        raw = json_path.read_text(encoding="utf-8")
+        params = load_semantic_file(json_path)
+        print("  ✓ 语义参数加载成功")
+    except Exception as e:
+        print(f"  ✗ 加载失败: {e}")
+        print("  提示: 请确保使用正确格式的语义文件 (包含 jammer_regions 和 num_bins 字段)")
+        return
 
-    params = None
-    if choice == "1":
-        json_path = Path(get_input("  JSON 文件路径"))
-        if not json_path.exists():
-            print(f"  ⚠️ 文件不存在: {json_path}")
-            return
+    # 按"全局默认语义轴"覆写四个核心字段
+    params.freq_min_mhz = DEFAULT_SEMANTIC_FREQ_MIN_MHZ
+    params.freq_max_mhz = DEFAULT_SEMANTIC_FREQ_MAX_MHZ
+    params.num_bins = DEFAULT_SEMANTIC_NUM_BINS
+    params.noise_floor_db = DEFAULT_SEMANTIC_NOISE_FLOOR_DB
 
-        # 读取 JSON 内容，自动识别 v1/v2 语义格式
-        try:
-            raw = json_path.read_text(encoding="utf-8")
-            data = json.loads(raw)
-        except Exception as e:
-            print(f"  ✗ 加载失败: {e}")
-            return
-
-        # v2: SemanticEncodingV2 格式（freq_min_mhz/freq_max_mhz/num_bins/noise_floor_db/jammer_regions）
-        if isinstance(data, dict) and "jammer_regions" in data and "num_bins" in data:
-            print("  ✓ 检测到 v2 语义格式 (SemanticEncodingV2)")
-            try:
-                params_v2 = load_semantic_v2_file(json_path)
-            except Exception as e:
-                print(f"  ✗ v2 参数加载失败: {e}")
-                return
-
-            # 按“全局默认语义轴”覆写四个核心字段
-            params_v2.freq_min_mhz = DEFAULT_SEMANTIC_FREQ_MIN_MHZ
-            params_v2.freq_max_mhz = DEFAULT_SEMANTIC_FREQ_MAX_MHZ
-            params_v2.num_bins = DEFAULT_SEMANTIC_NUM_BINS
-            params_v2.noise_floor_db = DEFAULT_SEMANTIC_NOISE_FLOOR_DB
-
-            try:
-                power_db = decode_semantic_v2(params_v2)
-            except Exception as e:
-                print(f"  ✗ v2 解码失败: {e}")
-                return
-
-            freq_mhz = np.linspace(
-                DEFAULT_SEMANTIC_FREQ_MIN_MHZ,
-                DEFAULT_SEMANTIC_FREQ_MAX_MHZ,
-                DEFAULT_SEMANTIC_NUM_BINS,
-            )
-
-            print(f"  ✓ 恢复成功")
-            print(f"    频率范围: {freq_mhz.min():.2f} - {freq_mhz.max():.2f} MHz")
-            print(f"    功率范围: {power_db.min():.2f} - {power_db.max():.2f} dB")
-            print(f"    分辨率: {(freq_mhz[1] - freq_mhz[0]):.2f} MHz")
-
-            save_choice = get_input("\n  保存结果? (y/n)", "y")
-            if save_choice.lower() == "y":
-                output_dir = Path(get_input("    输出目录", "data/cli_results"))
-                output_dir.mkdir(parents=True, exist_ok=True)
-
-                npz_path = output_dir / "recovered_spectrum_v2.npz"
-                np.savez(npz_path, freq_mhz=freq_mhz, power_db=power_db)
-                print(f"  ✓ 频谱已保存: {npz_path}")
-
-                # 保留原始语义 JSON
-                semantic_copy = output_dir / "semantic_params_v2.json"
-                semantic_copy.write_text(raw, encoding="utf-8")
-                print(f"  ✓ 语义参数已保存: {semantic_copy}")
-
-                png_path = output_dir / "recovered_spectrum_v2.png"
-                save_spectrum_png(freq_mhz, power_db, png_path, title="Recovered Spectrum (v2)")
-
-            return
-
-        # v1: 走原有 SemanticParams 路径
-        try:
-            params = load_semantic_file(json_path)
-            print("  ✓ 检测到 v1 语义格式 (SemanticParams)")
-        except Exception as e:
-            print(f"  ✗ 加载失败: {e}")
-            return
-
-    else:
-        print("\n➤ 输入语义参数")
-        yonghu = get_int("  用户ID", 1)
-        youwu = get_int("  有无干扰 (0/1)", 1)
-        menxian = get_float("  底噪功率 (dB)", -120.0)
-        start = get_int("  干扰起始索引", 470)
-        end = get_int("  干扰结束索引", 1470)
-        fenbianlv = get_int("  频谱总点数", 2471)
-        sinr_value = get_float("  SINR (dB)", 15.0)
-
-        pos_edge_str = get_input("  正边缘索引 (逗号分隔)", "470,970")
-        neg_edge_str = get_input("  负边缘索引 (逗号分隔)", "720,1470")
-
-        pos_edge = [int(x.strip()) for x in pos_edge_str.split(',') if x.strip()]
-        neg_edge = [int(x.strip()) for x in neg_edge_str.split(',') if x.strip()]
-
-        params = SemanticParams(
-            yonghu=yonghu,
-            youwu=youwu,
-            menxian=menxian,
-            pos_edge=pos_edge,
-            neg_edge=neg_edge,
-            start=start,
-            end=end,
-            fenbianlv=fenbianlv,
-            sinr=np.array([sinr_value]),
-            freq_min_mhz=30.0,
-            freq_max_mhz=2500.0,
-        )
-
-    # 解码（仅 v1 路径会走到这里）
+    # 解码恢复频谱
     print("\n➤ 恢复频谱...")
     try:
-        params.validate()
         power_db = decode_semantic(params)
-        freq_mhz = np.linspace(params.freq_min_mhz, params.freq_max_mhz, params.fenbianlv)
-
-        print(f"  ✓ 恢复成功")
-        print(f"    频率范围: {freq_mhz.min():.2f} - {freq_mhz.max():.2f} MHz")
-        print(f"    功率范围: {power_db.min():.2f} - {power_db.max():.2f} dB")
-        print(f"    分辨率: {params.resolution_mhz:.2f} MHz")
-
-        # 保存
-        save_choice = get_input("\n  保存结果? (y/n)", "y")
-        if save_choice.lower() == "y":
-            output_dir = Path(get_input("    输出目录", "data/cli_results"))
-            output_dir.mkdir(parents=True, exist_ok=True)
-
-            npz_path = output_dir / "recovered_spectrum.npz"
-            np.savez(npz_path, freq_mhz=freq_mhz, power_db=power_db)
-            print(f"  ✓ 频谱已保存: {npz_path}")
-
-            # 保存语义参数
-            json_path = output_dir / "semantic_params.json"
-            json_path.write_text(json.dumps(params.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8")
-            print(f"  ✓ 参数已保存: {json_path}")
-
-            # 保存恢复频谱图
-            png_path = output_dir / "recovered_spectrum.png"
-            save_spectrum_png(freq_mhz, power_db, png_path, title="Recovered Spectrum")
-
     except Exception as e:
-        print(f"\n  ✗ 错误: {e}")
+        print(f"  ✗ 解码失败: {e}")
         import traceback
         traceback.print_exc()
+        return
+
+    freq_mhz = np.linspace(
+        DEFAULT_SEMANTIC_FREQ_MIN_MHZ,
+        DEFAULT_SEMANTIC_FREQ_MAX_MHZ,
+        DEFAULT_SEMANTIC_NUM_BINS,
+    )
+
+    print(f"  ✓ 恢复成功")
+    print(f"    频率范围: {freq_mhz.min():.2f} - {freq_mhz.max():.2f} MHz")
+    print(f"    功率范围: {power_db.min():.2f} - {power_db.max():.2f} dB")
+    print(f"    分辨率: {(freq_mhz[1] - freq_mhz[0]):.2f} MHz")
+
+    # 保存结果
+    save_choice = get_input("\n  保存结果? (y/n)", "y")
+    if save_choice.lower() == "y":
+        output_dir = Path(get_input("    输出目录", "data/cli_results"))
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        npz_path = output_dir / "recovered_spectrum.npz"
+        np.savez(npz_path, freq_mhz=freq_mhz, power_db=power_db)
+        print(f"  ✓ 频谱已保存: {npz_path}")
+
+        # 保留原始语义 JSON
+        semantic_copy = output_dir / "semantic_params.json"
+        semantic_copy.write_text(raw, encoding="utf-8")
+        print(f"  ✓ 语义参数已保存: {semantic_copy}")
+
+        png_path = output_dir / "recovered_spectrum.png"
+        save_spectrum_png(freq_mhz, power_db, png_path, title="Recovered Spectrum")
+
+
+def task23_union_interactive() -> None:
+    """任务二+任务三：并集输出（复用 scripts/run_union.py）。"""
+    print("\n" + "=" * 80)
+    print("【任务二+任务三】输出并集频谱（run_union）")
+    print("=" * 80)
+    print("说明：默认读取 data_segment/ 与 data_semantic/semantic.json，输出到 output/。")
+
+    try:
+        ret = run_union.main()
+    except Exception as exc:
+        print(f"  ✗ 执行失败：{exc}")
+        return
+
+    if ret == 11:
+        print("  ✓ 并集流程执行完成（返回码=11）")
+    else:
+        print(f"  ⚠️ 并集流程返回非预期返回码：{ret}")
 
 
 def show_guide():
@@ -629,9 +569,10 @@ def show_guide():
 
 任务三：语义参数恢复频谱
   - 目的：从语义化参数重建功率谱
-  - 输入：语义参数 JSON 或交互式输入
-  - 语义参数包括：底噪、干扰范围、SINR、边缘位置等
-  - 输出：恢复的频谱和语义参数文件
+  - 输入：语义参数 JSON 文件
+  - 语义格式包含：freq_min_mhz, freq_max_mhz, num_bins, noise_floor_db, jammer_regions
+  - 自动使用全局默认语义轴参数覆写（30-2500 MHz, 2471 bins）
+  - 输出：恢复的频谱（recovered_spectrum.npz）和语义参数文件
 
 关键修复说明：
   ✓ 任务一修复：在基带生成干扰后频域平移，避免违反Nyquist定理
@@ -665,6 +606,9 @@ def main():
             input("\n按回车返回主菜单...")
         elif choice == "4":
             show_guide()
+        elif choice == "11":
+            task23_union_interactive()
+            input("\n按回车返回主菜单...")
         elif choice == "5":
             print("\n再见！")
             break

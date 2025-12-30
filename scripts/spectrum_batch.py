@@ -12,7 +12,7 @@
   python spectrum_batch.py stitch --input-dir data_segment --mode max -o stitched.npz
 
   # 任务三：语义恢复
-  python spectrum_batch.py decode --input params.json -o recovered.npz
+  python spectrum_batch.py decode --input semantic_case01.json -o recovered_v2.npz
 """
 from __future__ import annotations
 
@@ -32,10 +32,7 @@ from src.signal.spectrum_composer import SpectrumComposerConfig, JammerSpec, com
 from src.signal.stitcher import StitchMode
 from src.pipeline.stitch.stitch_real_data import stitch_from_bin_directory
 from src.io.reader import BinDataType
-from src.semantics.decode import load_semantic_file
-from src.semantics.decode_multi import decode_semantic_auto
 from src.semantics.decode_v2 import decode_file_v2
-from src.core.schemas import SemanticParams
 
 
 def cmd_compose(args):
@@ -136,42 +133,7 @@ def cmd_stitch(args):
 
 
 def cmd_decode(args):
-    """任务三：语义恢复"""
-    params = load_semantic_file(args.input)
-    # 自动选择单区域或多区域恢复
-    power_db = decode_semantic_auto(params)
-    freq_mhz = np.linspace(params.freq_min_mhz, params.freq_max_mhz, params.fenbianlv)
-
-    # 保存
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(args.output, freq_mhz=freq_mhz, power_db=power_db)
-    print(f"恢复频谱已保存: {args.output}")
-
-    # 可视化
-    if args.show or args.plot:
-        fig, ax = plt.subplots(figsize=(12, 5))
-        ax.plot(freq_mhz, power_db, linewidth=0.8)
-        ax.set_xlabel("Frequency (MHz)")
-        ax.set_ylabel("Power (dB)")
-        ax.set_title("Recovered Spectrum from Semantic Parameters")
-        ax.grid(True, alpha=0.3)
-        fig.tight_layout()
-
-        if args.plot:
-            plt.savefig(args.plot, dpi=150, bbox_inches='tight')
-            print(f"图像已保存: {args.plot}")
-
-        if args.show:
-            plt.show()
-        else:
-            plt.close(fig)
-
-    print(f"频率范围: {freq_mhz.min():.2f} - {freq_mhz.max():.2f} MHz")
-    print(f"功率范围: {power_db.min():.2f} - {power_db.max():.2f} dB")
-
-
-def cmd_decode_v2(args):
-    """任务三(v2)：基于 v2 语义参数恢复频谱。"""
+    """"任务三：基于 v2 语义参数恢复频谱。"""
 
     params, power_db = decode_file_v2(args.input)
     freq_mhz = np.linspace(params.freq_min_mhz, params.freq_max_mhz, params.num_bins)
@@ -239,21 +201,13 @@ def main():
     p_stitch.add_argument("--plot", type=Path)
     p_stitch.set_defaults(func=cmd_stitch)
 
-    # 任务三：解码 (v1)
-    p_decode = subparsers.add_parser("decode", help="语义恢复 (v1/SemanticParams)")
-    p_decode.add_argument("--input", type=Path, required=True, help="语义参数 JSON (v1)")
-    p_decode.add_argument("-o", "--output", type=Path, default=Path("recovered.npz"))
+    # 任务三：解码（仅 v2）
+    p_decode = subparsers.add_parser("decode", help="语义恢复 (v2/jammer_regions)")
+    p_decode.add_argument("--input", type=Path, required=True, help="v2 语义参数 JSON/TXT")
+    p_decode.add_argument("-o", "--output", type=Path, default=Path("recovered_v2.npz"))
     p_decode.add_argument("--show", action="store_true")
     p_decode.add_argument("--plot", type=Path)
     p_decode.set_defaults(func=cmd_decode)
-
-    # 任务三：解码 (v2)
-    p_decode_v2 = subparsers.add_parser("decode-v2", help="语义恢复 (v2/jammer_regions)")
-    p_decode_v2.add_argument("--input", type=Path, required=True, help="v2 语义参数 JSON")
-    p_decode_v2.add_argument("-o", "--output", type=Path, default=Path("recovered_v2.npz"))
-    p_decode_v2.add_argument("--show", action="store_true")
-    p_decode_v2.add_argument("--plot", type=Path)
-    p_decode_v2.set_defaults(func=cmd_decode_v2)
 
     args = parser.parse_args()
 

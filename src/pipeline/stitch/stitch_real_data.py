@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import Optional, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -15,7 +16,7 @@ try:
     # 优先作为 src 包内部模块导入（正常通过 src.pipeline.stitch 使用时）
     from ..io.reader import load_bin_segments, load_iq_file, BinDataType
     from ..signal.stitcher import SpectrumSegment, stitch_segments, StitchMode
-    from ..signal.spectrum import compute_power_spectrum
+    from ..signal.spectrum import compute_power_spectrum, compute_segmented_power_spectrum
     from ..core.schemas import SamplingConfig
 except ImportError:
     # 兼容直接运行本文件的场景：将仓库根目录加入 sys.path 后按 src 包导入
@@ -24,18 +25,20 @@ except ImportError:
         sys.path.append(str(root_dir))
     from src.io.reader import load_bin_segments, load_iq_file, BinDataType
     from src.signal.stitcher import SpectrumSegment, stitch_segments, StitchMode
-    from src.signal.spectrum import compute_power_spectrum
+    from src.signal.spectrum import compute_power_spectrum, compute_segmented_power_spectrum
     from src.core.schemas import SamplingConfig
 
 
 def stitch_from_bin_directory(
-    directory: str | Path,
+    directory: Union[str, Path],
     pattern: str = "*.bin",
     bin_dtype: BinDataType = BinDataType.INT16,
     mode: StitchMode = StitchMode.MAX,
     fft_size: int = 8192,
     window: str = "hann",
     fill_value: float = -180.0,
+    target_df_hz: Optional[float] = None,
+    time_agg_mode: str = "mean",
 ) -> tuple:
     """从目录中的.bin文件拼接频谱。
 
@@ -44,9 +47,11 @@ def stitch_from_bin_directory(
     - pattern: 文件匹配模式
     - bin_dtype: 数据类型
     - mode: 拼接模式
-    - fft_size: FFT点数
+    - fft_size: FFT点数（当未指定 target_df_hz 时生效）
     - window: 窗函数
     - fill_value: 未覆盖区域填充值
+    - target_df_hz: 目标频率分辨率（Hz），指定时将按分段 FFT 计算功率谱
+    - time_agg_mode: 分段之间的时间聚合方式（mean/max）
 
     返回:
     - stitched: 拼接后的频谱对象
@@ -62,15 +67,26 @@ def stitch_from_bin_directory(
     # 转换为频谱分段
     segments = []
     for iq in iq_list:
-        # 创建采样配置
+        # 创建采样配置（用于频轴与 FFT 尺度）
         cfg = SamplingConfig(
             sample_rate_hz=iq.sample_rate_hz,
             center_freq_hz=iq.center_freq_hz,
             fft_size=fft_size,
         )
 
-        # 计算功率谱
-        freq_mhz, power_db = compute_power_spectrum(iq, cfg, window=window)
+        # 计算功率谱：
+        # - 若指定了目标分辨率，则采用分段 FFT；
+        # - 否则沿用原有单次 FFT 行为。
+        if target_df_hz is not None:
+            freq_mhz, power_db = compute_segmented_power_spectrum(
+                iq,
+                cfg,
+                target_df_hz=target_df_hz,
+                window=window,
+                time_agg_mode=time_agg_mode,
+            )
+        else:
+            freq_mhz, power_db = compute_power_spectrum(iq, cfg, window=window)
 
         # 创建分段
         seg = SpectrumSegment(
