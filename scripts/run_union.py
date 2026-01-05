@@ -55,10 +55,25 @@ from src.core.schemas import (  # type: ignore
     DEFAULT_SEMANTIC_NOISE_FLOOR_DB,
 )
 
-try:
-    import matplotlib.pyplot as plt
-except Exception:  # pragma: no cover - 无图形环境时仅输出 npz
-    plt = None
+def _maybe_import_pyplot():
+    """按需导入 matplotlib，并尽量避免 Qt 相关噪音。
+
+    说明：
+    - 被 import 调用时默认 quiet=True，通常不需要绘图；因此这里不应在模块 import 阶段就引入 GUI 依赖。
+    - 本脚本仅保存 PNG，不需要交互式窗口；优先使用 Agg 后端可避免 Qt/DPI 警告与无 GUI 环境崩溃。
+    """
+    try:
+        import matplotlib
+
+        # 必须在 import pyplot 之前设置 backend；若外部已配置则保持原样即可
+        with suppress(Exception):
+            matplotlib.use("Agg")
+
+        import matplotlib.pyplot as pyplot
+
+        return pyplot
+    except Exception:  # pragma: no cover - 无图形环境/未安装时仅输出 npz
+        return None
 
 
 def _ensure_console_utf8() -> None:
@@ -475,8 +490,9 @@ def _run_union_impl(
         print(f"  ✓ 并集频谱数据已保存: {union_npz_path}")
 
         # 画图（如果 matplotlib 可用）
-        if plt is not None:
-            fig, ax = plt.subplots(figsize=(12, 5))
+        pyplot = _maybe_import_pyplot()
+        if pyplot is not None:
+            fig, ax = pyplot.subplots(figsize=(12, 5))
 
             # 绘图分辨率调节：若指定 plot_df_mhz，则对 IQ 参考谱做重采样；语义谱按区域映射到绘图频轴
             freq_plot = freq_out
@@ -519,8 +535,8 @@ def _run_union_impl(
             fig.tight_layout()
 
             png_path = output_dir / "union_spectrum.png"
-            plt.savefig(png_path, dpi=150, bbox_inches="tight")
-            plt.close(fig)
+            pyplot.savefig(png_path, dpi=150, bbox_inches="tight")
+            pyplot.close(fig)
             print(f"  ✓ 并集频谱图已保存: {png_path}")
         else:
             print("未安装 matplotlib，仅输出 npz 数据")
