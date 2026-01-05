@@ -35,6 +35,11 @@ from typing import Optional, Tuple
 
 import numpy as np
 
+# 该脚本只生成 PNG 文件，不需要任何 GUI 后端。
+# 关键点：run_union 依赖的部分模块在 import 阶段就会 import matplotlib.pyplot，
+# 如果不提前固定 backend，Windows 下可能自动选中 Qt 后端并产生 DPI 警告噪音。
+os.environ.setdefault("MPLBACKEND", "Agg")
+
 # 确保可以导入 src 包：将仓库根目录加入 sys.path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
