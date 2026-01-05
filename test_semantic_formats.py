@@ -5,10 +5,25 @@ from pathlib import Path
 import sys
 import numpy as np
 
-# Set UTF-8 encoding for Windows console
-if sys.platform == 'win32':
-    import io
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+def _ensure_console_utf8() -> None:
+    """Windows 控制台 UTF-8 兜底（避免 import 阶段修改全局 stdout/stderr）。"""
+    if sys.platform != "win32":
+        return
+
+    def _try_reconfigure(stream) -> None:
+        if stream is None:
+            return
+        if getattr(stream, "closed", False):
+            return
+        if not hasattr(stream, "reconfigure"):
+            return
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            return
+
+    _try_reconfigure(sys.stdout)
+    _try_reconfigure(sys.stderr)
 
 from src.semantics.decode_v2 import (
     load_semantic_v2_file,
@@ -196,5 +211,6 @@ def main():
 
 
 if __name__ == "__main__":
+    _ensure_console_utf8()
     success = main()
-    exit(0 if success else 1)
+    raise SystemExit(0 if success else 1)

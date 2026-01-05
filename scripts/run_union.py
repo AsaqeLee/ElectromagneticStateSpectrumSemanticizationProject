@@ -27,6 +27,7 @@
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from typing import Optional, Tuple
@@ -69,16 +70,43 @@ def _ensure_console_utf8() -> None:
     if sys.platform != "win32":  # pragma: no cover - 仅 Windows 生效
         return
 
-    import io
+    def _try_reconfigure(stream) -> None:
+        if stream is None:
+            return
+        if getattr(stream, "closed", False):
+            return
+        if not hasattr(stream, "reconfigure"):
+            return
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            # 某些非交互环境 stdout/stderr 可能不可用，保持原样即可
+            return
 
-    try:
-        if hasattr(sys.stdout, "buffer") and not sys.stdout.closed:
-            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-        if hasattr(sys.stderr, "buffer") and not sys.stderr.closed:
-            sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
-    except (AttributeError, ValueError):
-        # 某些非交互环境 stdout/stderr 可能不可用，保持原样即可
-        pass
+    _try_reconfigure(sys.stdout)
+    _try_reconfigure(sys.stderr)
+
+
+def _ensure_stdio_open() -> None:
+    """确保 stdout/stderr 可写，避免“打印时 I/O on closed file”。"""
+
+    def _open_devnull_text():
+        return open(os.devnull, "w", encoding="utf-8", errors="replace")
+
+    def _ensure(attr: str, fallback_attr: str) -> None:
+        stream = getattr(sys, attr, None)
+        if stream is not None and not getattr(stream, "closed", False):
+            return
+
+        fallback = getattr(sys, fallback_attr, None)
+        if fallback is not None and not getattr(fallback, "closed", False):
+            setattr(sys, attr, fallback)
+            return
+
+        setattr(sys, attr, _open_devnull_text())
+
+    _ensure("stdout", "__stdout__")
+    _ensure("stderr", "__stderr__")
 
 
 def _pick_semantic_file(semantic_path: Optional[Path]) -> Path:
@@ -101,7 +129,7 @@ def _pick_semantic_file(semantic_path: Optional[Path]) -> Path:
         if p.exists():
             return p
 
-    raise SystemExit(
+    raise FileNotFoundError(
         "语义文件不存在：未找到 data_semantic/semantic.txt 或 data_semantic/semantic.json；"
         "请创建其一，或在主程序中显式传入 semantic_path。"
     )
@@ -210,11 +238,11 @@ def _resample_to_df_mhz(
     """
 
     if target_df_mhz <= 0:
-        raise SystemExit(f"plot_df_mhz 必须 > 0，当前为: {target_df_mhz}")
+        raise ValueError(f"plot_df_mhz 必须 > 0，当前为: {target_df_mhz}")
     if freq_mhz.ndim != 1 or power_db.ndim != 1:
-        raise SystemExit("freq_mhz/power_db 必须是一维数组")
+        raise ValueError("freq_mhz/power_db 必须是一维数组")
     if freq_mhz.size != power_db.size:
-        raise SystemExit(f"freq_mhz 长度 {freq_mhz.size} 与 power_db 长度 {power_db.size} 不一致")
+        raise ValueError(f"freq_mhz 长度 {freq_mhz.size} 与 power_db 长度 {power_db.size} 不一致")
     if freq_mhz.size < 2:
         return freq_mhz.astype(float), power_db.astype(float)
 
@@ -295,7 +323,7 @@ def _run_task3_decode(
     """
 
     if not semantic_path.exists():
-        raise SystemExit(f"语义文件不存在: {semantic_path}")
+        raise FileNotFoundError(f"语义文件不存在: {semantic_path}")
 
     params_v2 = load_semantic_v2_file(semantic_path)
     power_db = decode_semantic_v2(params_v2)
@@ -325,16 +353,14 @@ def _resample_reference_to_semantic_axis(
     """
 
     if freq_ref.size == 0 or power_ref.size == 0:
-        raise SystemExit("参考谱为空，无法进行对齐与并集操作")
+        raise ValueError("参考谱为空，无法进行对齐与并集操作")
 
     power = power_ref.astype(float).copy()
 
     # 利用 coverage_map 清理“无覆盖”区域
     if coverage_map is not None:
         if coverage_map.shape != power.shape:
-            raise SystemExit(
-                f"coverage_map 长度 {coverage_map.size} 与参考功率 {power.size} 不一致"
-            )
+            raise ValueError(f"coverage_map 长度 {coverage_map.size} 与参考功率 {power.size} 不一致")
         power[coverage_map == 0] = noise_floor_db
 
     # 确保参考频轴递增
@@ -366,6 +392,7 @@ def main(
     """
 
     _ensure_console_utf8()
+    _ensure_stdio_open()
 
     # 路径约定（可按需修改）
     task2_input_dir = ROOT / "data_segment"
@@ -508,25 +535,18 @@ def main(
             print("未安装 matplotlib，仅输出 npz 数据")
     except Exception as exc:
         # 避免使用不可编码的装饰符号，减少“打印错误信息也失败”的概率
-        print(f"[ERROR] run_union 执行失败：{exc}")
+        try:
+            print(f"[ERROR] run_union 执行失败：{exc}", file=sys.stderr)
+        except Exception:
+            try:
+                if sys.__stderr__ is not None and not getattr(sys.__stderr__, "closed", False):
+                    sys.__stderr__.write(f"[ERROR] run_union 执行失败：{exc}\n")
+            except Exception:
+                pass
         raise
 
     return 11
 
 
 if __name__ == "__main__":
-    # 修复 Windows 控制台编码，避免中文输出报错
-    if sys.platform == "win32":
-        import io
-
-        try:
-            sys.stdout = io.TextIOWrapper(
-                sys.stdout.buffer, encoding="utf-8", errors="replace"
-            )
-            sys.stderr = io.TextIOWrapper(
-                sys.stderr.buffer, encoding="utf-8", errors="replace"
-            )
-        except (AttributeError, ValueError):
-            pass
-
     sys.exit(main())

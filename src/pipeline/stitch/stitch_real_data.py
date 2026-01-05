@@ -14,16 +14,16 @@ import numpy as np
 
 try:
     # 优先作为 src 包内部模块导入（正常通过 src.pipeline.stitch 使用时）
-    from ..io.reader import load_bin_segments, load_iq_file, BinDataType
+    from ..io.reader import load_bin_segments, BinDataType
     from ..signal.stitcher import SpectrumSegment, stitch_segments, StitchMode
     from ..signal.spectrum import compute_power_spectrum, compute_segmented_power_spectrum
     from ..core.schemas import SamplingConfig
 except ImportError:
     # 兼容直接运行本文件的场景：将仓库根目录加入 sys.path 后按 src 包导入
-    root_dir = Path(__file__).resolve().parents[2]
+    root_dir = Path(__file__).resolve().parents[3]
     if str(root_dir) not in sys.path:
         sys.path.append(str(root_dir))
-    from src.io.reader import load_bin_segments, load_iq_file, BinDataType
+    from src.io.reader import load_bin_segments, BinDataType
     from src.signal.stitcher import SpectrumSegment, stitch_segments, StitchMode
     from src.signal.spectrum import compute_power_spectrum, compute_segmented_power_spectrum
     from src.core.schemas import SamplingConfig

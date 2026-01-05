@@ -265,8 +265,6 @@ def load_bin_segments(
     返回:
     - IQData列表，按中心频率排序
     """
-    from glob import glob
-
     directory = Path(directory)
     files = sorted(directory.glob(pattern))
 
