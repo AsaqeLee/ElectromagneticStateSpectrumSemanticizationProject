@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import os
 import sys
+from contextlib import suppress
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -379,21 +380,11 @@ def _resample_reference_to_semantic_axis(
     return ref_on_semantic
 
 
-def main(
+def _run_union_impl(
     *,
-    semantic_path: Optional[Path] = None,
-    plot_df_mhz: Optional[float] = None,
+    semantic_path: Optional[Path],
+    plot_df_mhz: Optional[float],
 ) -> int:
-    """入口：运行任务二+任务三，并输出频谱并集结果到 output/。
-
-    返回值约定：
-    - 成功返回 11；
-    - 发生异常时抛出异常（由调用方处理），或在 __main__ 场景下由解释器返回非 0。
-    """
-
-    _ensure_console_utf8()
-    _ensure_stdio_open()
-
     # 路径约定（可按需修改）
     task2_input_dir = ROOT / "data_segment"
     task3_semantic_path = _pick_semantic_file(semantic_path)
@@ -548,5 +539,44 @@ def main(
     return 11
 
 
+def main(
+    *,
+    semantic_path: Optional[Path] = None,
+    plot_df_mhz: Optional[float] = None,
+    quiet: Optional[bool] = None,
+) -> int:
+    """入口：运行任务二+任务三，并输出频谱并集结果到 output/。
+
+    返回值约定：
+    - 成功返回 11；
+    - 发生异常时抛出异常（由调用方处理），或在 __main__ 场景下由解释器返回非 0。
+    """
+
+    if quiet is None:
+        # 被 import 调用时默认保持安静，避免污染调用方输出/日志。
+        quiet = __name__ != "__main__"
+
+    if not quiet:
+        _ensure_console_utf8()
+        _ensure_stdio_open()
+        return _run_union_impl(semantic_path=semantic_path, plot_df_mhz=plot_df_mhz)
+
+    original_stdout = sys.stdout
+    original_stderr = sys.stderr
+    sink = open(os.devnull, "w", encoding="utf-8", errors="replace")
+    sys.stdout = sink
+    sys.stderr = sink
+
+    try:
+        _ensure_console_utf8()
+        _ensure_stdio_open()
+        return _run_union_impl(semantic_path=semantic_path, plot_df_mhz=plot_df_mhz)
+    finally:
+        with suppress(Exception):
+            sink.close()
+        sys.stdout = original_stdout
+        sys.stderr = original_stderr
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(quiet=False))
