@@ -55,20 +55,28 @@ def main() -> int:
     print("主程序示例：开始调用 scripts.run_union.main()")
     print("=" * 80)
 
-    try:
-        ret = int(run_union.main())
-    except Exception as exc:
-        print(f"[ERROR] run_union 执行失败：{exc}")
-        return 1
+    runs = 5
+    for idx in range(1, runs + 1):
+        print("-" * 80)
+        print(f"第 {idx}/{runs} 次调用 run_union.main()")
+        print("-" * 80)
+        try:
+            ret = int(run_union.main())
+        except Exception as exc:
+            print(f"[ERROR] 第 {idx} 次 run_union 执行失败：{exc}")
+            return 1
 
-    if ret == 11:
-        print(f"[OK] run_union 执行成功，返回码={ret}")
-    else:
-        print(f"[WARN] run_union 返回非预期返回码={ret}（预期 11）")
+        if ret != 11:
+            print(f"[ERROR] 第 {idx} 次 run_union 返回非预期返回码={ret}（预期 11）")
+            return 1
 
-    return ret
+        print(f"[OK] 第 {idx} 次 run_union 执行成功，返回码={ret}")
+
+    print("=" * 80)
+    print(f"[OK] 连续调用完成：共 {runs} 次，均返回 11")
+    print("=" * 80)
+    return 11
 
 
 if __name__ == "__main__":
     sys.exit(main())
-
