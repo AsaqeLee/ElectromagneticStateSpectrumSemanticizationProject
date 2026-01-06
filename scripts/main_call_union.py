@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 
 
@@ -26,15 +27,25 @@ def _ensure_console_utf8() -> None:
     if sys.platform != "win32":  # pragma: no cover
         return
 
-    import io
+    def _try_reconfigure(stream) -> None:
+        if stream is None:
+            return
+        if getattr(stream, "closed", False):
+            return
+        if not hasattr(stream, "reconfigure"):
+            return
+        try:
+            stream.reconfigure(
+                encoding="utf-8",
+                errors="replace",
+                line_buffering=True,
+                write_through=True,
+            )
+        except Exception:
+            return
 
-    try:
-        if hasattr(sys.stdout, "buffer") and not sys.stdout.closed:
-            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-        if hasattr(sys.stderr, "buffer") and not sys.stderr.closed:
-            sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
-    except (AttributeError, ValueError):
-        pass
+    _try_reconfigure(sys.stdout)
+    _try_reconfigure(sys.stderr)
 
 
 def main() -> int:
@@ -62,6 +73,7 @@ def main() -> int:
         print("-" * 80)
         try:
             ret = int(run_union.main())
+            
         except Exception as exc:
             print(f"[ERROR] 第 {idx} 次 run_union 执行失败：{exc}")
             return 1
@@ -71,6 +83,9 @@ def main() -> int:
             return 1
 
         print(f"[OK] 第 {idx} 次 run_union 执行成功，返回码={ret}")
+
+        if idx != runs:
+            time.sleep(1)
 
     print("=" * 80)
     print(f"[OK] 连续调用完成：共 {runs} 次，均返回 11")
