@@ -56,12 +56,14 @@ from src.signal.stitcher import (
     load_segment_from_npz,
 )
 from src.pipeline.stitch.stitch_real_data import stitch_from_bin_directory
-from src.io.reader import BinDataType
+from src.io.reader import BinDataType, load_iq_file
+from src.signal.spectrum import compute_power_spectrum
 from src.semantics.decode_v2 import (
     decode_semantic_v2 as decode_semantic,
     load_semantic_v2_file as load_semantic_file,
 )
 from src.core.schemas import (
+    SamplingConfig,
     DEFAULT_SEMANTIC_FREQ_MIN_MHZ,
     DEFAULT_SEMANTIC_FREQ_MAX_MHZ,
     DEFAULT_SEMANTIC_NUM_BINS,
@@ -105,6 +107,29 @@ def save_spectrum_png(freq_mhz: np.ndarray, power_db: np.ndarray, output_path: P
         print(f"  ⚠️ 保存频谱图失败: {e}")
 
 
+def _collect_bin_files(bin_dir: Path, pattern: str) -> list[Path]:
+    """收集目录下匹配到的 .bin 文件。
+
+    规则：
+    - 优先使用 pattern；
+    - 若 pattern 未匹配到但目录下只有一个 *.bin，则直接返回该文件（避免通配符误伤）；
+    - 若 pattern 未匹配到且目录下存在多个 *.bin，则提示用户修正 pattern。
+    """
+
+    matched = sorted(bin_dir.glob(pattern))
+    if matched:
+        return matched
+
+    fallback = sorted(bin_dir.glob("*.bin"))
+    if len(fallback) == 1:
+        return fallback
+    if len(fallback) > 1:
+        raise FileNotFoundError(
+            f"通配符 {pattern} 未匹配到文件，但目录下存在 {len(fallback)} 个 .bin；请调整文件匹配模式后重试。"
+        )
+    raise FileNotFoundError(f"目录 {bin_dir} 中未找到任何 .bin 文件。")
+
+
 
 
 
@@ -127,7 +152,7 @@ def print_menu():
     """打印主菜单"""
     print("\n【主菜单】")
     print("  1. 任务一：合成干扰功率谱 (30-2500 MHz)")
-    print("  2. 任务二：拼接频谱分段")
+    print("  2. 任务二：拼接频谱分段（单文件 FFT 支持）")
     print("  3. 任务三：语义参数恢复频谱")
     print("  4. 查看使用指南")
     print("  11. 任务二+任务三：输出并集频谱 (run_union)")
@@ -371,6 +396,14 @@ def task2_interactive():
         
         # 文件匹配模式
         pattern = get_input("  文件匹配模式", "*.bin")
+
+        try:
+            matched_files = _collect_bin_files(bin_dir, pattern)
+        except FileNotFoundError as e:
+            print(f"\n  ✗ 错误: {e}")
+            return
+
+        print(f"\n  ✓ 匹配到 {len(matched_files)} 个 .bin 文件")
         
         # 数据类型选择
         print("\n➤ BIN 数据类型")
@@ -394,6 +427,70 @@ def task2_interactive():
         print("\n➤ 频谱计算参数（可直接回车使用默认值）")
         fft_size = get_int("  FFT 点数", 8192)
         window = get_input("  窗函数 (hann/hamming/blackman)", "hann")
+
+        # 单文件：直接 FFT 绘图（用户需求：目录下只有 1 个 .bin 时不需要匹配文件名，直接加载绘制）
+        if len(matched_files) == 1:
+            bin_path = matched_files[0]
+            print("\n➤ 检测到仅 1 个 .bin 文件，将进入单文件 FFT 模式（不进行拼接）")
+            print(f"  文件: {bin_path.name}")
+
+            # 用户需求默认：Fs=204.8MHz，Fc=0（基带）
+            sample_rate_hz = get_float("  采样率 (Hz)", 204.8e6)
+            center_freq_hz = get_float("  中心频率 (Hz)", 0.0)
+
+            print("\n➤ 计算功率谱...")
+            try:
+                iq = load_iq_file(
+                    bin_path,
+                    sample_rate_hz=sample_rate_hz,
+                    center_freq_hz=center_freq_hz,
+                    bin_dtype=bin_dtype,
+                )
+                cfg = SamplingConfig(
+                    sample_rate_hz=iq.sample_rate_hz,
+                    center_freq_hz=iq.center_freq_hz,
+                    fft_size=fft_size,
+                )
+                freq_mhz, power_db = compute_power_spectrum(iq, cfg, window=window)
+            except Exception as e:
+                print(f"\n  ✗ 错误: {e}")
+                import traceback
+                traceback.print_exc()
+                return
+
+            print(f"  ✓ 计算成功")
+            print(f"    频率范围: {freq_mhz.min():.2f} - {freq_mhz.max():.2f} MHz")
+            print(f"    功率范围: {power_db.min():.2f} - {power_db.max():.2f} dB")
+            print(f"    FFT 点数: {fft_size}, 窗函数: {window}")
+
+            save_choice = get_input("\n  保存结果? (y/n)", "y")
+            if save_choice.lower() == "y":
+                output_dir = Path(get_input("    输出目录", "data/cli_results"))
+                output_dir.mkdir(parents=True, exist_ok=True)
+
+                stem = bin_path.stem
+                npz_path = output_dir / f"{stem}_fft.npz"
+                np.savez(
+                    npz_path,
+                    freq_mhz=freq_mhz,
+                    power_db=power_db,
+                    sample_rate_hz=float(sample_rate_hz),
+                    center_freq_hz=float(center_freq_hz),
+                    fft_size=int(fft_size),
+                    window=str(window),
+                    source_file=str(bin_path),
+                    bin_dtype=str(bin_dtype.value),
+                )
+                print(f"  ✓ 已保存: {npz_path}")
+
+                png_path = output_dir / f"{stem}_fft.png"
+                save_spectrum_png(
+                    freq_mhz,
+                    power_db,
+                    png_path,
+                    title=f"FFT: {bin_path.name} (Fs={sample_rate_hz/1e6:.1f} MHz, Fc={center_freq_hz/1e6:.3f} MHz)",
+                )
+            return
         
         # 拼接模式
         print("\n➤ 拼接模式")
@@ -561,11 +658,12 @@ def show_guide():
   - 支持六类干扰：noise_fm, single_tone, multi_tone, comb, partial_band_noise, sweep
   - 输出：频谱 npz 文件和干扰配置 JSON
 
-任务二：拼接频谱分段
-  - 目的：将多个 200MHz 分段拼接为完整宽带频谱
-  - 输入：包含 freq_mhz, power_db 的 npz 文件
-  - 支持三种拼接模式：MAX, MEAN, WEIGHTED_MEAN
-  - 输出：拼接后的频谱和覆盖图
+任务二：拼接频谱分段（或单文件 FFT）
+  - 方式1：从 npz 文件逐个加载频谱分段并拼接
+  - 方式2：从 bin 目录批量加载：匹配到 1 个 .bin 时直接计算 FFT 并保存；匹配到多个 .bin 时自动计算并拼接
+  - 单文件 FFT 默认参数：Fs=204.8 MHz，Fc=0（可在交互中修改）
+  - 拼接支持三种模式：MAX, MEAN, WEIGHTED_MEAN
+  - 输出：npz + PNG（若安装 matplotlib）
 
 任务三：语义参数恢复频谱
   - 目的：从语义化参数重建功率谱
