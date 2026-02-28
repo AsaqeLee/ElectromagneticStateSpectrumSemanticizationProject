@@ -21,18 +21,31 @@ import json
 import sys
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 # Note: 编码处理已在各模块中完成
 
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from src.signal.spectrum_composer import SpectrumComposerConfig, JammerSpec, compose_spectrum
 from src.signal.stitcher import StitchMode
 from src.pipeline.stitch.stitch_real_data import stitch_from_bin_directory
 from src.io.reader import BinDataType
 from src.semantics.decode_v2 import decode_file_v2
+
+
+def _import_plt():
+    """按需导入 matplotlib。
+
+    目的：当用户不需要绘图时，避免导入 matplotlib 带来的冷启动开销与无 GUI 环境报错。
+    """
+    try:
+        import matplotlib.pyplot as plt  # type: ignore
+    except Exception as e:  # pragma: no cover - 依赖环境差异大
+        raise RuntimeError("需要绘图功能，但 matplotlib 不可用/不可导入") from e
+    return plt
 
 
 def cmd_compose(args):
@@ -64,6 +77,7 @@ def cmd_compose(args):
 
     # 可视化
     if args.show or args.plot:
+        plt = _import_plt()
         fig, ax = plt.subplots(figsize=(12, 5))
         ax.plot(freq_mhz, power_db, linewidth=0.8)
         ax.set_xlabel("Frequency (MHz)")
@@ -91,13 +105,27 @@ def cmd_stitch(args):
     bin_dtype = BinDataType(args.dtype)
     mode = StitchMode(args.mode)
 
-    stitched, segments = stitch_from_bin_directory(
-        args.input_dir,
-        args.pattern,
-        bin_dtype,
-        mode,
-        args.fft_size,
-    )
+    segment_fft_size = int(args.segment_fft_size)
+    if segment_fft_size > 0:
+        stitched, segments = stitch_from_bin_directory(
+            args.input_dir,
+            args.pattern,
+            bin_dtype,
+            mode,
+            args.fft_size,
+            segment_fft_size=segment_fft_size,
+            time_agg_mode=str(args.time_agg_mode),
+            default_sample_rate_hz=float(args.sample_rate),
+        )
+    else:
+        stitched, segments = stitch_from_bin_directory(
+            args.input_dir,
+            args.pattern,
+            bin_dtype,
+            mode,
+            args.fft_size,
+            default_sample_rate_hz=float(args.sample_rate),
+        )
 
     # 保存
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -111,6 +139,7 @@ def cmd_stitch(args):
 
     # 可视化
     if args.show or args.plot:
+        plt = _import_plt()
         fig, ax = plt.subplots(figsize=(14, 5))
         ax.plot(stitched.freq_mhz, stitched.power_db, linewidth=0.5)
         ax.set_xlabel("Frequency (MHz)")
@@ -145,6 +174,7 @@ def cmd_decode(args):
 
     # 可视化
     if args.show or args.plot:
+        plt = _import_plt()
         fig, ax = plt.subplots(figsize=(12, 5))
         ax.plot(freq_mhz, power_db, linewidth=0.8)
         ax.set_xlabel("Frequency (MHz)")
@@ -197,6 +227,25 @@ def main():
     p_stitch.add_argument("--mode", default="max",
                          choices=["max", "mean", "weighted_mean"])
     p_stitch.add_argument("--fft-size", type=int, default=8192)
+    p_stitch.add_argument(
+        "--segment-fft-size",
+        type=int,
+        default=512,
+        help="分段 FFT 点数（NFFT）。>0 启用分段 FFT；=0 禁用分段 FFT 并退回单次 FFT（使用 --fft-size）",
+    )
+    p_stitch.add_argument(
+        "--time-agg-mode",
+        type=str,
+        default="mean",
+        choices=["mean", "max"],
+        help="分段 FFT 的时间聚合方式（仅在启用 --segment-fft-size 时生效）",
+    )
+    p_stitch.add_argument(
+        "--sample-rate",
+        type=float,
+        default=204.8e6,
+        help="默认采样率 Hz（当文件名不包含带宽/采样率信息时使用，例如 130MHz.bin）",
+    )
     p_stitch.add_argument("--show", action="store_true")
     p_stitch.add_argument("--plot", type=Path)
     p_stitch.set_defaults(func=cmd_stitch)

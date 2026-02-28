@@ -40,8 +40,19 @@ class BinDataType(str, Enum):
 def parse_bin_filename(filename: str, strict: bool = False) -> dict:
     """从文件名解析元数据。
 
-    支持格式: {type}_{center_freq}MHz_{bandwidth}MHz_{timestamp}.bin
-    例如: single_130MHz_204.8MHz_11h14m22s.bin
+    支持格式（按优先级匹配）：
+
+    1) 完整格式（推荐，信息最全）：
+       {type}_{center_freq}MHz_{bandwidth}MHz_{timestamp}.bin
+       例如: single_130MHz_204.8MHz_11h14m22s.bin
+
+    2) 无类型的简化格式（仍可推断采样率）：
+       {center_freq}MHz_{bandwidth}MHz(_{timestamp})?.bin
+       例如: 130MHz_204.8MHz.bin
+
+    3) 仅中心频率格式（无法从文件名推断采样率）：
+       {center_freq}MHz.bin
+       例如: 130MHz.bin
 
     返回:
     - jam_type: 干扰类型
@@ -51,20 +62,32 @@ def parse_bin_filename(filename: str, strict: bool = False) -> dict:
     参数:
     - strict: 为 True 时，解析失败将抛出 ValueError；为 False 时返回空 dict。
     """
-    # 匹配模式: type_freqMHz_bwMHz_timestamp.bin
-    pattern = r"^(\w+)_(\d+(?:\.\d+)?)MHz_(\d+(?:\.\d+)?)MHz_.*\.bin$"
-    match = re.match(pattern, filename)
+    patterns = (
+        # 1) type_centerMHz_bwMHz_timestamp.bin
+        r"^(?P<jam_type>\w+)_(?P<center_mhz>\d+(?:\.\d+)?)MHz_(?P<bw_mhz>\d+(?:\.\d+)?)MHz_.*\.bin$",
+        # 2) centerMHz_bwMHz(_timestamp)?.bin
+        r"^(?P<center_mhz>\d+(?:\.\d+)?)MHz_(?P<bw_mhz>\d+(?:\.\d+)?)MHz(?:_.*)?\.bin$",
+        # 3) centerMHz.bin
+        r"^(?P<center_mhz>\d+(?:\.\d+)?)MHz\.bin$",
+    )
+
+    match = None
+    for pattern in patterns:
+        match = re.match(pattern, filename)
+        if match:
+            break
 
     if not match:
         if strict:
             raise ValueError(f"无法从文件名解析元数据（strict 模式）：{filename}")
         return {}
 
-    return {
-        "jam_type": match.group(1),
-        "center_freq_mhz": float(match.group(2)),
-        "bandwidth_mhz": float(match.group(3)),
-    }
+    meta = {"center_freq_mhz": float(match.group("center_mhz"))}
+    if "jam_type" in match.groupdict() and match.group("jam_type") is not None:
+        meta["jam_type"] = str(match.group("jam_type"))
+    if "bw_mhz" in match.groupdict() and match.group("bw_mhz") is not None:
+        meta["bandwidth_mhz"] = float(match.group("bw_mhz"))
+    return meta
 
 
 def _load_bin(
@@ -104,15 +127,19 @@ def _load_bin(
             raw = np.fromfile(path, dtype=np.int16)
             if raw.size % 2 != 0:
                 raise ValueError(f"INT16 IQ 数据长度必须为偶数，当前 {raw.size}，文件: {path}")
-            samples = raw[0::2].astype(np.float64) + 1j * raw[1::2].astype(np.float64)
-            samples = samples / 32768.0  # 归一化到 [-1, 1]
+            # 性能关键路径：尽量避免拆分 I/Q 与 float64 上采样。
+            # 先整体转换到 float32 并归一化，然后 view 为 complex64（[I0,Q0,I1,Q1,...] -> complex）。
+            raw_f32 = raw.astype(np.float32)
+            raw_f32 *= 1.0 / 32768.0  # 归一化到 [-1, 1]
+            samples = raw_f32.view(np.complex64)
 
         elif dtype == BinDataType.INT8:
             raw = np.fromfile(path, dtype=np.int8)
             if raw.size % 2 != 0:
                 raise ValueError(f"INT8 IQ 数据长度必须为偶数，当前 {raw.size}，文件: {path}")
-            samples = raw[0::2].astype(np.float64) + 1j * raw[1::2].astype(np.float64)
-            samples = samples / 128.0
+            raw_f32 = raw.astype(np.float32)
+            raw_f32 *= 1.0 / 128.0
+            samples = raw_f32.view(np.complex64)
 
         elif dtype == BinDataType.FLOAT32:
             raw = np.fromfile(path, dtype=np.float32)
@@ -120,10 +147,12 @@ def _load_bin(
                 raise ValueError(
                     f"FLOAT32 IQ 数据长度必须为偶数（实部/虚部交织），当前 {raw.size}，文件: {path}"
                 )
-            samples = raw[0::2].astype(np.float64) + 1j * raw[1::2].astype(np.float64)
+            # float32 交织 I/Q：直接 view 为 complex64，避免额外拷贝
+            samples = raw.view(np.complex64)
 
         elif dtype == BinDataType.COMPLEX64:
-            samples = np.fromfile(path, dtype=np.complex64).astype(np.complex128)
+            # 保持 complex64，避免无意义的上采样与拷贝
+            samples = np.fromfile(path, dtype=np.complex64)
 
         elif dtype == BinDataType.COMPLEX128:
             samples = np.fromfile(path, dtype=np.complex128)
@@ -242,8 +271,13 @@ def load_iq_file(
     if sr is None:
         raise ValueError("样本缺失 sample_rate_hz，请在参数中提供或使用规范文件名")
 
+    samples_arr = np.asarray(samples)
+    # 兼容历史：若输入是实数向量（例如某些 .npy/.npz），也允许加载并视为虚部为 0 的 IQ。
+    if not np.iscomplexobj(samples_arr):
+        samples_arr = samples_arr.astype(np.complex64)
+
     return IQData(
-        samples=np.asarray(samples, dtype=np.complex128),
+        samples=samples_arr,
         sample_rate_hz=float(sr),
         center_freq_hz=float(cf),
         meta=meta,
@@ -254,6 +288,7 @@ def load_bin_segments(
     directory: Union[str, Path],
     pattern: str = "*.bin",
     bin_dtype: BinDataType = BinDataType.INT16,
+    default_sample_rate_hz: Optional[float] = 204.8e6,
 ) -> list[IQData]:
     """批量加载目录下的.bin文件。
 
@@ -261,6 +296,8 @@ def load_bin_segments(
     - directory: 目录路径
     - pattern: 文件匹配模式
     - bin_dtype: 数据类型
+    - default_sample_rate_hz: 当文件名无法推断采样率时使用的默认采样率（Hz，默认 204.8e6）。
+      典型场景：文件名仅为 `{center}MHz.bin`，不包含带宽/采样率信息。
 
     返回:
     - IQData列表，按中心频率排序
@@ -274,8 +311,36 @@ def load_bin_segments(
     segments = []
     for f in files:
         try:
-            iq = load_iq_file(f, bin_dtype=bin_dtype)
+            # 性能关键点：如果文件名仅为 `{center}MHz.bin`，缺少采样率信息，
+            # 先调用 `load_iq_file()` 再靠异常重试，会导致“同一个文件读两遍”。
+            # 这里用文件名做一次轻量解析，缺采样率时直接带上默认采样率，一次读完。
+            sr_override: Optional[float] = None
+            if default_sample_rate_hz is not None:
+                meta_guess = parse_bin_filename(f.name, strict=False)
+                if "bandwidth_mhz" not in meta_guess:
+                    sr_override = float(default_sample_rate_hz)
+
+            iq = load_iq_file(
+                f,
+                bin_dtype=bin_dtype,
+                sample_rate_hz=sr_override,
+            )
             segments.append(iq)
+        except ValueError as e:
+            # 兼容简化命名：{center}MHz.bin（无法从文件名推断采样率）
+            if default_sample_rate_hz is not None and "sample_rate_hz" in str(e):
+                try:
+                    iq = load_iq_file(
+                        f,
+                        bin_dtype=bin_dtype,
+                        sample_rate_hz=float(default_sample_rate_hz),
+                    )
+                    segments.append(iq)
+                    continue
+                except Exception as retry_exc:
+                    print(f"警告: 加载 {f} 失败（已尝试默认采样率 {default_sample_rate_hz} Hz）：{retry_exc}")
+                    continue
+            print(f"警告: 加载 {f} 失败: {e}")
         except Exception as e:
             print(f"警告: 加载 {f} 失败: {e}")
 

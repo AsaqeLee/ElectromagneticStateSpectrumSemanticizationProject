@@ -123,5 +123,5 @@ def default_config() -> ProjectConfig:
     """提供便于单元测试与快速迭代的默认配置。"""
 
     return ProjectConfig(
-        sampling=SamplingConfig(sample_rate_hz=200e6, center_freq_hz=0.0, fft_size=4096),
+        sampling=SamplingConfig(sample_rate_hz=204.8e6, center_freq_hz=0.0, fft_size=4096),
     )

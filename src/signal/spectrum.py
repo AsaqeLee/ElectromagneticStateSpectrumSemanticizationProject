@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Dict, Tuple
 
 import numpy as np
+import scipy.fft as sfft
 from scipy.signal import get_window
 
 from ..core.schemas import IQData, SamplingConfig
@@ -49,6 +50,7 @@ def compute_segmented_power_spectrum(
     target_df_hz: float,
     window: str = "hann",
     time_agg_mode: str = "mean",
+    fft_workers: int | None = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """基于目标频率分辨率的分段功率谱估计（dB）。
 
@@ -74,7 +76,9 @@ def compute_segmented_power_spectrum(
             f"请调整 target_df_hz 或采样率（Fs={fs} Hz）"
         )
 
-    samples = np.asarray(iq.samples, dtype=np.complex128)
+    # 性能关键路径：默认使用 complex64 + 向量化分段 FFT（避免 Python 循环）。
+    # 对“态势绘制”类应用，complex64 精度足够且速度更好。
+    samples = np.asarray(iq.samples, dtype=np.complex64)
     num_samples = samples.size
     if num_samples == 0:
         raise ValueError("IQ 样本为空，无法计算功率谱")
@@ -87,45 +91,45 @@ def compute_segmented_power_spectrum(
     )
     freq_axis = make_frequency_axis(cfg_seg)
 
-    tap = get_window(window, fft_size, fftbins=True)
+    tap = get_window(window, fft_size, fftbins=True).astype(np.float32, copy=False)
 
-    # 分段循环：最后一段不足时补零
+    # 向量化分段：pad 到 num_chunks*fft_size，reshape 为 (num_chunks, fft_size)
     num_chunks = (num_samples + fft_size - 1) // fft_size
-    agg_power_linear = None
-    agg_power_db = None
+    padded_len = num_chunks * fft_size
+    if padded_len == num_samples:
+        chunks = samples.reshape(num_chunks, fft_size)
+    else:
+        padded = np.zeros(padded_len, dtype=samples.dtype)
+        padded[:num_samples] = samples
+        chunks = padded.reshape(num_chunks, fft_size)
 
-    for idx in range(num_chunks):
-        start = idx * fft_size
-        end = min(start + fft_size, num_samples)
-        chunk = samples[start:end]
-        if chunk.size < fft_size:
-            padded = np.zeros(fft_size, dtype=chunk.dtype)
-            padded[: chunk.size] = chunk
-            chunk = padded
+    windowed = chunks * tap  # (num_chunks, fft_size)，broadcast
 
-        windowed = chunk * tap
-        fft = np.fft.fftshift(np.fft.fft(windowed, n=fft_size))
-        power = np.abs(fft) ** 2 / fft_size
+    # FFT（批量）：axis=1 表示对每个 chunk 做一次 N 点 FFT。
+    # 使用 scipy.fft（支持 workers，多核环境下通常更快）。
+    # workers=-1 表示尽可能使用所有核心；若你在外层已经并行计算，改为 workers=1 更稳妥。
+    # workers 选择：对 512 这类小 FFT，线程调度开销可能反而变慢。
+    # 这里提供一个“默认好用”的启发式：小 FFT + chunk 数不大时单线程；否则尽量吃满 CPU。
+    if fft_workers is None:
+        fft_workers = 1 if (fft_size <= 1024 and num_chunks <= 1024) else -1
 
-        if time_agg_mode == "mean":
-            if agg_power_linear is None:
-                agg_power_linear = power
-            else:
-                agg_power_linear += power
-        else:  # "max"
-            power_db = 10.0 * np.log10(power + POWER_EPS)
-            if agg_power_db is None:
-                agg_power_db = power_db
-            else:
-                agg_power_db = np.maximum(agg_power_db, power_db)
+    fft = sfft.fft(windowed, n=fft_size, axis=1, workers=int(fft_workers))
+
+    # 功率（线性域），避免 abs()->sqrt 再平方的浪费：|a+jb|^2 = a^2+b^2。
+    # 注意：不要对 (num_chunks, NFFT) 做 fftshift（那会产生一次大拷贝）。
+    # 我们先在“未 shift 的 bin 顺序”下聚合到 (NFFT,) 再做 1D shift。
+    power_linear = (fft.real * fft.real + fft.imag * fft.imag) / float(fft_size)
 
     if time_agg_mode == "mean":
-        assert agg_power_linear is not None
-        agg_power_linear /= float(num_chunks)
+        agg_power_linear = power_linear.mean(axis=0)
+        half = fft_size // 2
+        agg_power_linear = np.concatenate([agg_power_linear[half:], agg_power_linear[:half]])
         power_db = 10.0 * np.log10(agg_power_linear + POWER_EPS)
-    else:
-        assert agg_power_db is not None
-        power_db = agg_power_db
+    else:  # "max"
+        power_db_chunks = 10.0 * np.log10(power_linear + POWER_EPS)
+        agg_power_db = power_db_chunks.max(axis=0)
+        half = fft_size // 2
+        power_db = np.concatenate([agg_power_db[half:], agg_power_db[:half]])
 
     return freq_axis, power_db
 

@@ -9,7 +9,6 @@ import sys
 from pathlib import Path
 from typing import Optional, Union
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 try:
@@ -39,6 +38,8 @@ def stitch_from_bin_directory(
     fill_value: float = -180.0,
     target_df_hz: Optional[float] = None,
     time_agg_mode: str = "mean",
+    segment_fft_size: Optional[int] = None,
+    default_sample_rate_hz: Optional[float] = 204.8e6,
 ) -> tuple:
     """从目录中的.bin文件拼接频谱。
 
@@ -52,13 +53,22 @@ def stitch_from_bin_directory(
     - fill_value: 未覆盖区域填充值
     - target_df_hz: 目标频率分辨率（Hz），指定时将按分段 FFT 计算功率谱
     - time_agg_mode: 分段之间的时间聚合方式（mean/max）
+    - segment_fft_size: 分段 FFT 点数（NFFT）。指定时将覆盖 target_df_hz，
+      且对每个分段按其自身采样率计算 target_df_hz=Fs/NFFT，保证得到固定 NFFT。
+    - default_sample_rate_hz: 当文件名无法推断采样率时使用的默认采样率（Hz）。
+      典型场景：文件名仅为 `{center}MHz.bin`。
 
     返回:
     - stitched: 拼接后的频谱对象
     - segments: 分段列表（用于调试）
     """
     # 加载所有.bin文件
-    iq_list = load_bin_segments(directory, pattern, bin_dtype)
+    iq_list = load_bin_segments(
+        directory,
+        pattern,
+        bin_dtype,
+        default_sample_rate_hz=default_sample_rate_hz,
+    )
     print(f"已加载 {len(iq_list)} 个IQ分段")
 
     if not iq_list:
@@ -75,9 +85,21 @@ def stitch_from_bin_directory(
         )
 
         # 计算功率谱：
-        # - 若指定了目标分辨率，则采用分段 FFT；
+        # - 若指定了 segment_fft_size，则采用固定 NFFT 的分段 FFT（推荐用于大样本 .bin）；
+        # - 否则若指定了 target_df_hz，则采用目标分辨率分段 FFT；
         # - 否则沿用原有单次 FFT 行为。
-        if target_df_hz is not None:
+        if segment_fft_size is not None:
+            if segment_fft_size < 2:
+                raise ValueError(f"segment_fft_size 过小: {segment_fft_size}（至少 2）")
+            seg_target_df_hz = float(iq.sample_rate_hz) / float(segment_fft_size)
+            freq_mhz, power_db = compute_segmented_power_spectrum(
+                iq,
+                cfg,
+                target_df_hz=seg_target_df_hz,
+                window=window,
+                time_agg_mode=time_agg_mode,
+            )
+        elif target_df_hz is not None:
             freq_mhz, power_db = compute_segmented_power_spectrum(
                 iq,
                 cfg,
@@ -147,10 +169,34 @@ def main():
         help="FFT点数",
     )
     parser.add_argument(
+        "--segment-fft-size",
+        type=int,
+        default=512,
+        help="分段 FFT 点数（NFFT）。>0 启用分段 FFT；=0 禁用并退回单次 FFT（使用 --fft-size）",
+    )
+    parser.add_argument(
+        "--time-agg-mode",
+        type=str,
+        default="mean",
+        choices=["mean", "max"],
+        help="分段 FFT 的时间聚合方式（仅在启用 --segment-fft-size 时生效）",
+    )
+    parser.add_argument(
+        "--sample-rate",
+        type=float,
+        default=204.8e6,
+        help="默认采样率 Hz（当文件名不包含带宽/采样率信息时使用，例如 130MHz.bin）",
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
         default=Path("data/real_stitch_results"),
         help="输出目录",
+    )
+    parser.add_argument(
+        "--no-plot",
+        action="store_true",
+        help="不生成 PNG 图（仅保存 npz，适用于性能测试/无图形环境）",
     )
     parser.add_argument(
         "--show",
@@ -158,6 +204,9 @@ def main():
         help="显示图形",
     )
     args = parser.parse_args()
+
+    if args.show and args.no_plot:
+        raise SystemExit("参数错误：--show 需要绘图，不能与 --no-plot 同时使用")
 
     # 检查输入目录
     if not args.input_dir.exists():
@@ -173,16 +222,23 @@ def main():
     print(f"输入目录: {args.input_dir}")
     print(f"数据类型: {args.dtype}")
     print(f"拼接模式: {args.mode}")
-    print(f"FFT点数: {args.fft_size}")
+    if int(args.segment_fft_size) > 0:
+        print(f"分段 FFT: NFFT={int(args.segment_fft_size)}, 时间聚合={args.time_agg_mode}")
+    else:
+        print(f"单次 FFT: NFFT={args.fft_size}")
     print()
 
     # 执行拼接
+    segment_fft_size = int(args.segment_fft_size)
     stitched, segments = stitch_from_bin_directory(
         args.input_dir,
         args.pattern,
         bin_dtype,
         mode,
         args.fft_size,
+        segment_fft_size=(segment_fft_size if segment_fft_size > 0 else None),
+        time_agg_mode=str(args.time_agg_mode),
+        default_sample_rate_hz=float(args.sample_rate),
     )
 
     # 保存结果
@@ -197,43 +253,54 @@ def main():
     )
     print(f"\n拼接频谱已保存: {npz_path}")
 
-    # 绘图
-    png_path = args.output_dir / "stitched_real_spectrum.png"
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 8), sharex=True)
+    if not args.no_plot:
+        # 绘图是可选路径：不要在模块 import 阶段引入 matplotlib（启动慢、还容易在无 GUI 环境炸）。
+        import matplotlib.pyplot as plt
 
-    # 功率谱
-    ax1.plot(stitched.freq_mhz, stitched.power_db, linewidth=0.5, color='blue', alpha=0.8)
-    ax1.set_ylabel("Power (dB)", fontsize=12)
-    ax1.set_title(f"Real Data Stitched Spectrum ({len(segments)} segments, mode={args.mode})",
-                  fontsize=14, fontweight='bold')
-    ax1.grid(True, alpha=0.3, linestyle='--')
+        png_path = args.output_dir / "stitched_real_spectrum.png"
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 8), sharex=True)
 
-    # 标记每个分段的范围
-    colors = plt.cm.Set2(np.linspace(0, 1, len(segments)))
-    for i, seg in enumerate(segments):
-        f_min = seg.freq_mhz.min()
-        f_max = seg.freq_mhz.max()
-        ax1.axvspan(f_min, f_max, alpha=0.1, color=colors[i],
-                   label=f"{seg.metadata.get('jam_type', f'seg{i}')} @ {seg.center_freq_mhz:.0f}MHz")
+        # 功率谱
+        ax1.plot(stitched.freq_mhz, stitched.power_db, linewidth=0.5, color='blue', alpha=0.8)
+        ax1.set_ylabel("Power (dB)", fontsize=12)
+        ax1.set_title(
+            f"Real Data Stitched Spectrum ({len(segments)} segments, mode={args.mode})",
+            fontsize=14,
+            fontweight='bold',
+        )
+        ax1.grid(True, alpha=0.3, linestyle='--')
 
-    ax1.legend(loc='upper right', fontsize=8, ncol=2)
+        # 标记每个分段的范围
+        colors = plt.cm.Set2(np.linspace(0, 1, len(segments)))
+        for i, seg in enumerate(segments):
+            f_min = seg.freq_mhz.min()
+            f_max = seg.freq_mhz.max()
+            ax1.axvspan(
+                f_min,
+                f_max,
+                alpha=0.1,
+                color=colors[i],
+                label=f"{seg.metadata.get('jam_type', f'seg{i}')} @ {seg.center_freq_mhz:.0f}MHz",
+            )
 
-    # 覆盖图
-    ax2.plot(stitched.freq_mhz, stitched.coverage_map, linewidth=0.8, color='red', alpha=0.7)
-    ax2.set_xlabel("Frequency (MHz)", fontsize=12)
-    ax2.set_ylabel("Coverage Count", fontsize=12)
-    ax2.set_title("Segment Coverage Map", fontsize=12)
-    ax2.grid(True, alpha=0.3, linestyle='--')
-    ax2.set_ylim(0, max(stitched.coverage_map.max() + 1, 2))
+        ax1.legend(loc='upper right', fontsize=8, ncol=2)
 
-    fig.tight_layout()
-    plt.savefig(png_path, dpi=150, bbox_inches='tight')
-    print(f"拼接频谱图已保存: {png_path}")
+        # 覆盖图
+        ax2.plot(stitched.freq_mhz, stitched.coverage_map, linewidth=0.8, color='red', alpha=0.7)
+        ax2.set_xlabel("Frequency (MHz)", fontsize=12)
+        ax2.set_ylabel("Coverage Count", fontsize=12)
+        ax2.set_title("Segment Coverage Map", fontsize=12)
+        ax2.grid(True, alpha=0.3, linestyle='--')
+        ax2.set_ylim(0, max(stitched.coverage_map.max() + 1, 2))
 
-    if args.show:
-        plt.show()
-    else:
-        plt.close(fig)
+        fig.tight_layout()
+        plt.savefig(png_path, dpi=150, bbox_inches='tight')
+        print(f"拼接频谱图已保存: {png_path}")
+
+        if args.show:
+            plt.show()
+        else:
+            plt.close(fig)
 
     # 打印统计
     print(f"\n拼接结果统计:")

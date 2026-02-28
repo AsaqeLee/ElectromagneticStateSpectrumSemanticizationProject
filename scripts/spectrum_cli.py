@@ -57,7 +57,7 @@ from src.signal.stitcher import (
 )
 from src.pipeline.stitch.stitch_real_data import stitch_from_bin_directory
 from src.io.reader import BinDataType, load_iq_file
-from src.signal.spectrum import compute_power_spectrum
+from src.signal.spectrum import compute_power_spectrum, compute_segmented_power_spectrum
 from src.semantics.decode_v2 import (
     decode_semantic_v2 as decode_semantic,
     load_semantic_v2_file as load_semantic_file,
@@ -385,8 +385,11 @@ def task2_interactive():
     # ========== 方式 2: 从 BIN 文件目录加载（新增功能） ==========
     elif source_choice == "2":
         print("\n➤ BIN 文件配置")
-        print("  文件命名规范: {type}_{freq}MHz_{bw}MHz_{timestamp}.bin")
-        print("  示例: single_130MHz_204.8MHz_11h14m22s.bin")
+        print("  文件命名规范（兼容多种）：")
+        print("   - 完整: {type}_{freq}MHz_{bw}MHz_{timestamp}.bin")
+        print("     例: single_130MHz_204.8MHz_11h14m22s.bin")
+        print("   - 简化: {freq}MHz.bin")
+        print("     例: 130MHz.bin（此时采样率使用下面的“默认采样率”）")
         
         # 获取目录路径
         bin_dir = Path(get_input("  BIN 文件目录路径", "data/raw_segments"))
@@ -422,11 +425,30 @@ def task2_interactive():
             "5": BinDataType.COMPLEX128,
         }
         bin_dtype = dtype_map.get(dtype_choice, BinDataType.INT16)
+
+        # 当文件名不包含带宽/采样率时（例如 130MHz.bin），用该值补全 sample_rate_hz。
+        # 若文件名本身包含带宽（例如 single_130MHz_204.8MHz_xxx.bin），该值不会覆盖文件名推断结果。
+        default_sample_rate_hz = get_float("  默认采样率 (Hz，仅用于 130MHz.bin 简化命名)", 204.8e6)
         
-        # 高级参数
+        # 频谱计算模式
+        print("\n➤ 频谱计算模式（影响速度与分辨率）")
+        print("  1. 分段 FFT（Welch 风格，使用全部 IQ，推荐用于大样本 .bin）")
+        print("  2. 单次 FFT（截断/补零到 fft_size，适合快速验证）")
+        calc_mode_choice = get_input("  选择模式 (1/2)", "1")
+
         print("\n➤ 频谱计算参数（可直接回车使用默认值）")
-        fft_size = get_int("  FFT 点数", 8192)
         window = get_input("  窗函数 (hann/hamming/blackman)", "hann")
+
+        # 默认采用：NFFT=512（Fs=204.8MHz 时约 400kHz 分辨率）
+        segment_fft_size: Optional[int] = None
+        time_agg_mode = "mean"
+        fft_size: Optional[int] = None
+
+        if calc_mode_choice == "1":
+            segment_fft_size = get_int("  分段 FFT 点数 (NFFT)", 512)
+            time_agg_mode = get_input("  分段时间聚合 (mean/max)", "mean")
+        else:
+            fft_size = get_int("  FFT 点数", 8192)
 
         # 单文件：直接 FFT 绘图（用户需求：目录下只有 1 个 .bin 时不需要匹配文件名，直接加载绘制）
         if len(matched_files) == 1:
@@ -446,12 +468,31 @@ def task2_interactive():
                     center_freq_hz=center_freq_hz,
                     bin_dtype=bin_dtype,
                 )
-                cfg = SamplingConfig(
-                    sample_rate_hz=iq.sample_rate_hz,
-                    center_freq_hz=iq.center_freq_hz,
-                    fft_size=fft_size,
-                )
-                freq_mhz, power_db = compute_power_spectrum(iq, cfg, window=window)
+
+                if segment_fft_size is not None:
+                    cfg = SamplingConfig(
+                        sample_rate_hz=iq.sample_rate_hz,
+                        center_freq_hz=iq.center_freq_hz,
+                        fft_size=segment_fft_size,
+                    )
+                    target_df_hz = float(iq.sample_rate_hz) / float(segment_fft_size)
+                    freq_mhz, power_db = compute_segmented_power_spectrum(
+                        iq,
+                        cfg,
+                        target_df_hz=target_df_hz,
+                        window=window,
+                        time_agg_mode=time_agg_mode,
+                    )
+                    num_chunks = (iq.samples.size + int(segment_fft_size) - 1) // int(segment_fft_size)
+                else:
+                    assert fft_size is not None
+                    cfg = SamplingConfig(
+                        sample_rate_hz=iq.sample_rate_hz,
+                        center_freq_hz=iq.center_freq_hz,
+                        fft_size=fft_size,
+                    )
+                    freq_mhz, power_db = compute_power_spectrum(iq, cfg, window=window)
+                    num_chunks = 1
             except Exception as e:
                 print(f"\n  ✗ 错误: {e}")
                 import traceback
@@ -461,7 +502,14 @@ def task2_interactive():
             print(f"  ✓ 计算成功")
             print(f"    频率范围: {freq_mhz.min():.2f} - {freq_mhz.max():.2f} MHz")
             print(f"    功率范围: {power_db.min():.2f} - {power_db.max():.2f} dB")
-            print(f"    FFT 点数: {fft_size}, 窗函数: {window}")
+            if segment_fft_size is not None:
+                df_khz = float(iq.sample_rate_hz) / float(segment_fft_size) / 1e3
+                print(f"    分段 FFT: NFFT={segment_fft_size}, 分段数={num_chunks}, Δf≈{df_khz:.3f} kHz")
+                print(f"    窗函数: {window}, 时间聚合: {time_agg_mode}")
+            else:
+                assert fft_size is not None
+                df_khz = float(iq.sample_rate_hz) / float(fft_size) / 1e3
+                print(f"    单次 FFT: NFFT={fft_size}, Δf≈{df_khz:.3f} kHz, 窗函数: {window}")
 
             save_choice = get_input("\n  保存结果? (y/n)", "y")
             if save_choice.lower() == "y":
@@ -469,26 +517,31 @@ def task2_interactive():
                 output_dir.mkdir(parents=True, exist_ok=True)
 
                 stem = bin_path.stem
-                npz_path = output_dir / f"{stem}_fft.npz"
-                np.savez(
-                    npz_path,
-                    freq_mhz=freq_mhz,
-                    power_db=power_db,
-                    sample_rate_hz=float(sample_rate_hz),
-                    center_freq_hz=float(center_freq_hz),
-                    fft_size=int(fft_size),
-                    window=str(window),
-                    source_file=str(bin_path),
-                    bin_dtype=str(bin_dtype.value),
-                )
+                mode_tag = f"segfft{segment_fft_size}" if segment_fft_size is not None else f"fft{fft_size}"
+                npz_path = output_dir / f"{stem}_{mode_tag}.npz"
+                meta = {
+                    "sample_rate_hz": float(sample_rate_hz),
+                    "center_freq_hz": float(center_freq_hz),
+                    "fft_mode": "segmented" if segment_fft_size is not None else "single",
+                    # 约定：fft_size 表示最终输出谱线的点数（对分段 FFT 来说就是 NFFT）
+                    "fft_size": int(segment_fft_size if segment_fft_size is not None else fft_size),
+                    "num_chunks": int(num_chunks),
+                    "window": str(window),
+                    "source_file": str(bin_path),
+                    "bin_dtype": str(bin_dtype.value),
+                }
+                if segment_fft_size is not None:
+                    meta["segment_fft_size"] = int(segment_fft_size)
+                    meta["time_agg_mode"] = str(time_agg_mode)
+                np.savez(npz_path, freq_mhz=freq_mhz, power_db=power_db, **meta)
                 print(f"  ✓ 已保存: {npz_path}")
 
-                png_path = output_dir / f"{stem}_fft.png"
+                png_path = output_dir / f"{stem}_{mode_tag}.png"
                 save_spectrum_png(
                     freq_mhz,
                     power_db,
                     png_path,
-                    title=f"FFT: {bin_path.name} (Fs={sample_rate_hz/1e6:.1f} MHz, Fc={center_freq_hz/1e6:.3f} MHz)",
+                    title=f"{mode_tag}: {bin_path.name} (Fs={sample_rate_hz/1e6:.1f} MHz, Fc={center_freq_hz/1e6:.3f} MHz)",
                 )
             return
         
@@ -507,14 +560,20 @@ def task2_interactive():
         # 执行拼接
         print("\n➤ 加载 BIN 文件并执行拼接...")
         try:
+            # 若选用分段 FFT：固定 NFFT（默认 512），对每个分段使用其自身 Fs 计算 target_df=Fs/NFFT
+            seg_fft_size_for_stitch = segment_fft_size if calc_mode_choice == "1" else None
+            fft_size_for_stitch = int(fft_size if fft_size is not None else (segment_fft_size or 8192))
             result, segments = stitch_from_bin_directory(
                 directory=bin_dir,
                 pattern=pattern,
                 bin_dtype=bin_dtype,
                 mode=mode,
-                fft_size=fft_size,
+                fft_size=fft_size_for_stitch,
                 window=window,
                 fill_value=fill_value,
+                time_agg_mode=time_agg_mode,
+                segment_fft_size=seg_fft_size_for_stitch,
+                default_sample_rate_hz=float(default_sample_rate_hz),
             )
             
             print(f"\n  ✓ 拼接成功")
@@ -661,7 +720,7 @@ def show_guide():
 任务二：拼接频谱分段（或单文件 FFT）
   - 方式1：从 npz 文件逐个加载频谱分段并拼接
   - 方式2：从 bin 目录批量加载：匹配到 1 个 .bin 时直接计算 FFT 并保存；匹配到多个 .bin 时自动计算并拼接
-  - 单文件 FFT 默认参数：Fs=204.8 MHz，Fc=0（可在交互中修改）
+  - 单文件 .bin 默认采用“分段 FFT”：NFFT=512（Fs=204.8MHz 时约 400kHz 分辨率），时间聚合默认 mean
   - 拼接支持三种模式：MAX, MEAN, WEIGHTED_MEAN
   - 输出：npz + PNG（若安装 matplotlib）
 

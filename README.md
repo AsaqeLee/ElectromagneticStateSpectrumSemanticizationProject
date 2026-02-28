@@ -245,7 +245,8 @@ python spectrum_batch.py stitch \
   --pattern "*.bin" \
   --dtype int16 \
   --mode max \
-  --fft-size 262144 \
+  --segment-fft-size 512 \
+  --time-agg-mode mean \
   -o data/stitched_30_2500.npz \
   --plot data/stitched_30_2500.png
 ```
@@ -253,7 +254,10 @@ python spectrum_batch.py stitch \
 其中：
 
 - `input-dir` 指向包含多个 200 MHz 分段 `.bin` 文件的目录；
-- 文件名建议符合 `single_130MHz_204.8MHz_xxx.bin` 这类规范，便于自动推断中心频率与带宽。
+- 文件名支持两类命名：
+  - 完整命名：`single_130MHz_204.8MHz_xxx.bin`（可从文件名自动推断中心频率与采样率/带宽）；
+  - 简化命名：`130MHz.bin`（仅中心频率，采样率可用 `--sample-rate` 指定；默认 204.8e6 Hz）。
+- `segment-fft-size` 为分段 FFT 的 NFFT（推荐用于大样本 `.bin`，避免“超大 FFT + 绘图卡顿”）；设置为 `0` 可禁用分段 FFT 并退回单次 FFT（使用 `--fft-size`）。
 
 #### 4.3 任务三：语义恢复（v1 / v2）
 
@@ -323,14 +327,16 @@ python -m src.pipeline.compose_spectrum \
 from pathlib import Path
 from src.io.reader import BinDataType
 from src.signal.stitcher import StitchMode
-from src.pipeline.stitch_real_data import stitch_from_bin_directory
+from src.pipeline.stitch.stitch_real_data import stitch_from_bin_directory
 
 stitched, segments = stitch_from_bin_directory(
     directory=Path("data_segment"),
     pattern="*.bin",
     bin_dtype=BinDataType.INT16,
     mode=StitchMode.MAX,
-    fft_size=262144,
+    # 推荐：对大样本 .bin 使用分段 FFT，并固定 NFFT（例如 512）
+    segment_fft_size=512,
+    time_agg_mode="mean",
 )
 
 np.savez(
