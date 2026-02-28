@@ -8,7 +8,7 @@
 - 频谱对齐：在语义频轴上对齐两条谱线，参考谱与语义谱取“并集”，
   且所有“无参考覆盖”的点按语义底噪 noise_floor_db 处理；
 - 输出：将 IQ/语义按频点取 max 合并为一条功率谱，并保存到 output/union_spectrum.npz；
-  同时生成 PNG 图（颜色区分“当前频点由 IQ/语义哪一侧取到 max”）。
+  可选生成 PNG 图（颜色区分“当前频点由 IQ/语义哪一侧取到 max”），默认关闭绘图以提速。
 
 用法（在仓库根目录执行）：
 
@@ -35,8 +35,8 @@ from typing import Optional, Tuple
 
 import numpy as np
 
-# 该脚本只生成 PNG 文件，不需要任何 GUI 后端。
-# 关键点：run_union 依赖的部分模块在 import 阶段就会 import matplotlib.pyplot，
+# 该脚本可选生成 PNG，但不需要任何 GUI 后端。
+# 关键点：绘图是可选路径；但一旦启用绘图，依赖的部分模块可能会 import matplotlib.pyplot。
 # 如果不提前固定 backend，Windows 下可能自动选中 Qt 后端并产生 DPI 警告噪音。
 os.environ.setdefault("MPLBACKEND", "Agg")
 
@@ -56,8 +56,6 @@ from src.semantics.decode_v2 import (  # type: ignore
 from src.core.schemas import (  # type: ignore
     DEFAULT_SEMANTIC_FREQ_MIN_MHZ,
     DEFAULT_SEMANTIC_FREQ_MAX_MHZ,
-    DEFAULT_SEMANTIC_NUM_BINS,
-    DEFAULT_SEMANTIC_NOISE_FLOOR_DB,
 )
 
 def _maybe_import_pyplot():
@@ -285,29 +283,57 @@ def _run_task2_stitch(
     mode: StitchMode = StitchMode.MAX,
     window: str = "hann",
     fill_value: float = -180.0,
-    target_df_hz: Optional[float] = 100_000.0,
     time_agg_mode: str = "mean",
+    segment_fft_size: int = 512,
+    default_sample_rate_hz: float = 204.8e6,
+    target_df_hz: Optional[float] = None,
 ):
     """运行任务二：从 .bin 目录拼接宽带频谱。
 
-    默认行为调整为：
-    - 若提供 target_df_hz（默认为 100 kHz），则对每个 .bin 采用分段 FFT，
-      以近似该频率分辨率计算功率谱（时间上做 mean/max 聚合）；
-    - 若 target_df_hz 为 None，则退回到原先的“单次 FFT（fft_size 点）”模式。
+    默认行为（性能优先）：
+    - 默认采用“分段 FFT + 时间聚合”的方式，并固定 NFFT=512（工程约定）；
+    - 若 segment_fft_size <= 0 且提供了 target_df_hz，则按 target_df_hz 推导 NFFT；
+    - 若两者都不提供（或 target_df_hz=None），则退回到“单次 FFT（fft_size 点）”模式。
     """
 
     try:
-        stitched, segments = stitch_from_bin_directory(
-            directory=input_dir,
-            pattern="*.bin",
-            bin_dtype=BinDataType.INT16,
-            mode=mode,
-            fft_size=fft_size,
-            window=window,
-            fill_value=fill_value,
-            target_df_hz=target_df_hz,
-            time_agg_mode=time_agg_mode,
-        )
+        if int(segment_fft_size) > 0:
+            stitched, segments = stitch_from_bin_directory(
+                directory=input_dir,
+                pattern="*.bin",
+                bin_dtype=BinDataType.INT16,
+                mode=mode,
+                fft_size=fft_size,
+                window=window,
+                fill_value=fill_value,
+                segment_fft_size=int(segment_fft_size),
+                time_agg_mode=time_agg_mode,
+                default_sample_rate_hz=float(default_sample_rate_hz),
+            )
+        elif target_df_hz is not None:
+            stitched, segments = stitch_from_bin_directory(
+                directory=input_dir,
+                pattern="*.bin",
+                bin_dtype=BinDataType.INT16,
+                mode=mode,
+                fft_size=fft_size,
+                window=window,
+                fill_value=fill_value,
+                target_df_hz=target_df_hz,
+                time_agg_mode=time_agg_mode,
+                default_sample_rate_hz=float(default_sample_rate_hz),
+            )
+        else:
+            stitched, segments = stitch_from_bin_directory(
+                directory=input_dir,
+                pattern="*.bin",
+                bin_dtype=BinDataType.INT16,
+                mode=mode,
+                fft_size=fft_size,
+                window=window,
+                fill_value=fill_value,
+                default_sample_rate_hz=float(default_sample_rate_hz),
+            )
         if stitched.freq_mhz.size == 0:
             print(
                 "  警告 任务二拼接结果为空，data_segment 目录可能没有有效 .bin 文件，"
@@ -404,6 +430,9 @@ def _run_union_impl(
     *,
     semantic_path: Optional[Path],
     plot_df_mhz: Optional[float],
+    enable_plot: bool,
+    segment_fft_size: int,
+    time_agg_mode: str,
 ) -> int:
     # 路径约定（可按需修改）
     task2_input_dir = ROOT / "data_segment"
@@ -415,7 +444,11 @@ def _run_union_impl(
         print("=" * 80)
         print("运行任务二：拼接真实 .bin 频谱")
         print("=" * 80)
-        stitched = _run_task2_stitch(task2_input_dir)
+        stitched = _run_task2_stitch(
+            task2_input_dir,
+            segment_fft_size=int(segment_fft_size),
+            time_agg_mode=str(time_agg_mode),
+        )
         if stitched.freq_mhz.size == 0:
             print(
                 "任务二未生成有效参考谱（data_segment 为空或拼接失败），"
@@ -426,6 +459,9 @@ def _run_union_impl(
                 f"任务二完成：参考频率范围 {stitched.freq_min_mhz:.2f} - "
                 f"{stitched.freq_max_mhz:.2f} MHz, 点数 {stitched.freq_mhz.size}"
             )
+            if stitched.freq_mhz.size >= 2:
+                df_ref_mhz = float(stitched.freq_mhz[1] - stitched.freq_mhz[0])
+                print(f"参考谱分辨率（约）：Δf={df_ref_mhz:.6f} MHz")
 
         print("\n" + "=" * 80)
         print("运行任务三：语义参数恢复频谱")
@@ -447,21 +483,28 @@ def _run_union_impl(
             f"点数 {int(params_v2.num_bins)}, 分辨率 {df_in_mhz:.6f} MHz, 底噪 {noise_floor_db:.2f} dB"
         )
 
-        # 输出保存频轴：固定采用全局默认（当前为 0.1 MHz），避免语义输入分辨率改变导致下游数据维度漂移
+        # 输出保存频轴：按工程约定固定 1 MHz（2471 点），避免下游因分辨率变化导致维度漂移。
+        # 注意：这里的“输出分辨率”与“语义参数的 num_bins 解释分辨率”是两回事：
+        # - 语义参数用于解释 start_bin/end_bin 对应的频率区间（可能是 1 MHz 或 0.1 MHz）；
+        # - 但最终保存到 union_spectrum.npz 的输出频轴固定为 1 MHz。
+        output_df_mhz = 1.0
+        output_num_bins = int(
+            round((DEFAULT_SEMANTIC_FREQ_MAX_MHZ - DEFAULT_SEMANTIC_FREQ_MIN_MHZ) / output_df_mhz)
+        ) + 1
         freq_out = np.linspace(
             DEFAULT_SEMANTIC_FREQ_MIN_MHZ,
             DEFAULT_SEMANTIC_FREQ_MAX_MHZ,
-            DEFAULT_SEMANTIC_NUM_BINS,
+            output_num_bins,
         )
         df_out_mhz = (
-            (DEFAULT_SEMANTIC_FREQ_MAX_MHZ - DEFAULT_SEMANTIC_FREQ_MIN_MHZ) / (DEFAULT_SEMANTIC_NUM_BINS - 1)
-            if DEFAULT_SEMANTIC_NUM_BINS >= 2
+            (DEFAULT_SEMANTIC_FREQ_MAX_MHZ - DEFAULT_SEMANTIC_FREQ_MIN_MHZ) / (output_num_bins - 1)
+            if output_num_bins >= 2
             else float("nan")
         )
         print(
             "输出保存频轴："
             f"{DEFAULT_SEMANTIC_FREQ_MIN_MHZ:.2f} - {DEFAULT_SEMANTIC_FREQ_MAX_MHZ:.2f} MHz, "
-            f"点数 {DEFAULT_SEMANTIC_NUM_BINS}, 分辨率 {df_out_mhz:.6f} MHz"
+            f"点数 {output_num_bins}, 分辨率 {df_out_mhz:.6f} MHz"
         )
 
         # 将语义区域映射到输出频轴（避免 start_bin/end_bin 因分辨率不同而“频段漂移”）
@@ -494,57 +537,60 @@ def _run_union_impl(
         )
         print(f"  ✓ 并集频谱数据已保存: {union_npz_path}")
 
-        # 画图（如果 matplotlib 可用）
-        pyplot = _maybe_import_pyplot()
-        if pyplot is not None:
-            fig, ax = pyplot.subplots(figsize=(12, 5))
+        if enable_plot:
+            # 画图（如果 matplotlib 可用）
+            pyplot = _maybe_import_pyplot()
+            if pyplot is not None:
+                fig, ax = pyplot.subplots(figsize=(12, 5))
 
-            # 绘图分辨率调节：若指定 plot_df_mhz，则对 IQ 参考谱做重采样；语义谱按区域映射到绘图频轴
-            freq_plot = freq_out
-            ref_plot = power_ref_on_out
-            if plot_df_mhz is not None:
-                freq_plot, ref_plot = _resample_to_df_mhz(freq_out, power_ref_on_out, float(plot_df_mhz))
+                # 绘图分辨率调节：若指定 plot_df_mhz，则对 IQ 参考谱做重采样；语义谱按区域映射到绘图频轴
+                freq_plot = freq_out
+                ref_plot = power_ref_on_out
+                if plot_df_mhz is not None:
+                    freq_plot, ref_plot = _resample_to_df_mhz(freq_out, power_ref_on_out, float(plot_df_mhz))
 
-            sem_plot = _semantic_power_on_axis(params_v2, freq_plot)
-            union_plot = np.maximum(ref_plot, sem_plot)
+                sem_plot = _semantic_power_on_axis(params_v2, freq_plot)
+                union_plot = np.maximum(ref_plot, sem_plot)
 
-            # 颜色区分：当前频点由哪一侧取到 max
-            take_iq = ref_plot >= sem_plot
-            union_from_iq = np.where(take_iq, union_plot, np.nan)
-            union_from_sem = np.where(~take_iq, union_plot, np.nan)
+                # 颜色区分：当前频点由哪一侧取到 max
+                take_iq = ref_plot >= sem_plot
+                union_from_iq = np.where(take_iq, union_plot, np.nan)
+                union_from_sem = np.where(~take_iq, union_plot, np.nan)
 
-            ax.plot(
-                freq_plot,
-                union_from_iq,
-                label="并集(取IQ侧max)",
-                linewidth=0.8,
-                alpha=0.9,
-                color="#1f77b4",
-            )
-            ax.plot(
-                freq_plot,
-                union_from_sem,
-                label="并集(取语义侧max)",
-                linewidth=0.8,
-                alpha=0.9,
-                color="#ff7f0e",
-            )
-            ax.set_xlabel("Frequency (MHz)")
-            ax.set_ylabel("Power (dB)")
-            title = "任务二/任务三 频谱并集（按频点取max，颜色区分来源）"
-            if plot_df_mhz is not None:
-                title += f"  [plot_df={float(plot_df_mhz):.6f} MHz]"
-            ax.set_title(title)
-            ax.grid(True, alpha=0.3, linestyle="--")
-            ax.legend(loc="best", fontsize=9)
-            fig.tight_layout()
+                ax.plot(
+                    freq_plot,
+                    union_from_iq,
+                    label="并集(取IQ侧max)",
+                    linewidth=0.8,
+                    alpha=0.9,
+                    color="#1f77b4",
+                )
+                ax.plot(
+                    freq_plot,
+                    union_from_sem,
+                    label="并集(取语义侧max)",
+                    linewidth=0.8,
+                    alpha=0.9,
+                    color="#ff7f0e",
+                )
+                ax.set_xlabel("Frequency (MHz)")
+                ax.set_ylabel("Power (dB)")
+                title = "任务二/任务三 频谱并集（按频点取max，颜色区分来源）"
+                if plot_df_mhz is not None:
+                    title += f"  [plot_df={float(plot_df_mhz):.6f} MHz]"
+                ax.set_title(title)
+                ax.grid(True, alpha=0.3, linestyle="--")
+                ax.legend(loc="best", fontsize=9)
+                fig.tight_layout()
 
-            png_path = output_dir / "union_spectrum.png"
-            pyplot.savefig(png_path, dpi=150, bbox_inches="tight")
-            pyplot.close(fig)
-            print(f"  ✓ 并集频谱图已保存: {png_path}")
+                png_path = output_dir / "union_spectrum.png"
+                pyplot.savefig(png_path, dpi=150, bbox_inches="tight")
+                pyplot.close(fig)
+                print(f"  ✓ 并集频谱图已保存: {png_path}")
+            else:
+                print("未安装 matplotlib，仅输出 npz 数据")
         else:
-            print("未安装 matplotlib，仅输出 npz 数据")
+            print("绘图已禁用，仅输出 npz 数据")
     except Exception as exc:
         # 避免使用不可编码的装饰符号，减少“打印错误信息也失败”的概率
         try:
@@ -565,6 +611,9 @@ def main(
     semantic_path: Optional[Path] = None,
     plot_df_mhz: Optional[float] = None,
     quiet: Optional[bool] = None,
+    enable_plot: Optional[bool] = None,
+    segment_fft_size: int = 512,
+    time_agg_mode: str = "mean",
 ) -> int:
     """入口：运行任务二+任务三，并输出频谱并集结果到 output/。
 
@@ -577,10 +626,20 @@ def main(
         # 被 import 调用时默认保持安静，避免污染调用方输出/日志。
         quiet = __name__ != "__main__"
 
+    if enable_plot is None:
+        # 性能优先：默认不绘图。需要 PNG 时由调用方显式传入 enable_plot=True。
+        enable_plot = False
+
     if not quiet:
         _ensure_console_utf8()
         _ensure_stdio_open()
-        return _run_union_impl(semantic_path=semantic_path, plot_df_mhz=plot_df_mhz)
+        return _run_union_impl(
+            semantic_path=semantic_path,
+            plot_df_mhz=plot_df_mhz,
+            enable_plot=bool(enable_plot),
+            segment_fft_size=int(segment_fft_size),
+            time_agg_mode=str(time_agg_mode),
+        )
 
     original_stdout = sys.stdout
     original_stderr = sys.stderr
@@ -591,7 +650,13 @@ def main(
     try:
         _ensure_console_utf8()
         _ensure_stdio_open()
-        return _run_union_impl(semantic_path=semantic_path, plot_df_mhz=plot_df_mhz)
+        return _run_union_impl(
+            semantic_path=semantic_path,
+            plot_df_mhz=plot_df_mhz,
+            enable_plot=bool(enable_plot),
+            segment_fft_size=int(segment_fft_size),
+            time_agg_mode=str(time_agg_mode),
+        )
     finally:
         with suppress(Exception):
             sink.close()
@@ -600,4 +665,4 @@ def main(
 
 
 if __name__ == "__main__":
-    sys.exit(main(quiet=False))
+    sys.exit(main(quiet=False, enable_plot=False))
