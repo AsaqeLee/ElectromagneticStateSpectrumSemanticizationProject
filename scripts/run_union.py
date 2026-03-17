@@ -47,6 +47,8 @@ DEFAULT_NOISE_FLOOR_DBM_1MHZ = -105.0
 DEFAULT_OUTPUT_DF_MHZ = 1.0
 DEFAULT_OUTPUT_RBW_MHZ = 1.0
 
+JNR_FLOOR_DB = -200.0
+
 NOISE_EST_PERCENTILE = 20.0
 POWER_EPS = 1e-12
 
@@ -287,7 +289,11 @@ def _load_semantic_params_with_txt_default(path: Path):
     - 默认按 1 MHz（num_bins=2471）解释 start_bin/end_bin；
     - 并在控制台给出提示：如需 0.1 MHz，请在文件中显式写 num_bins=24701。
     """
-    params_v2 = load_semantic_v2_file(path)
+    # 语义输入可能来自“未经处理的上游接口输出”，常见问题：
+    # - jammer_regions 无序；
+    # - jammer_regions 可重叠（需要后处理叠加）。
+    # 因此这里使用 strict=False 宽松加载，避免在文件加载阶段直接失败。
+    params_v2 = load_semantic_v2_file(path, strict=False)
 
     if path.suffix.lower() == ".txt" and not _semantic_txt_has_num_bins(path):
         print(
@@ -305,14 +311,13 @@ def _semantic_power_on_axis(
     *,
     override_noise_floor_db: Optional[float] = None,
 ) -> np.ndarray:
-    """将语义 jammer_regions 映射到指定频率轴上（功率谱，dB/dBm）。
+    """将语义 jammer_regions 映射到指定频率轴上（总功率，dB/dBm）。
 
-    规则：
-    - axis 上默认填 noise_floor_db；
-    - 对每个 region，在 [start_bin, end_bin] 对应的频率区间内，将功率抬升到 noise_floor_db+jnr_db；
-    - 若 region 之间有重叠，取 max（更符合“功率取大”的直觉）。
+    语义约定：
+    - `jnr_db` 表示 JNR（dB），即 J/N；
+    - 当多个区域重叠时，应在**线性域**叠加干扰比值：sum(J/N)；
+    - 总功率：T = N * (1 + sum(J/N))，再转换到 dB/dBm。
     """
-    params_v2.validate()
     noise_floor_db = (
         float(override_noise_floor_db)
         if override_noise_floor_db is not None
@@ -330,9 +335,17 @@ def _semantic_power_on_axis(
         float(params_v2.num_bins) - 1.0
     )
 
+    # diff 前缀和：累计 sum(J/N)
+    diff = np.zeros(freq_axis_mhz.size + 1, dtype=float)
+
     for region in params_v2.jammer_regions:
-        f0 = float(params_v2.freq_min_mhz) + float(region.start_bin) * df_in_mhz
-        f1 = float(params_v2.freq_min_mhz) + float(region.end_bin) * df_in_mhz
+        start_bin = int(region.start_bin)
+        end_bin = int(region.end_bin)
+        if start_bin > end_bin:
+            start_bin, end_bin = end_bin, start_bin
+
+        f0 = float(params_v2.freq_min_mhz) + float(start_bin) * df_in_mhz
+        f1 = float(params_v2.freq_min_mhz) + float(end_bin) * df_in_mhz
         f_start = min(f0, f1)
         f_end = max(f0, f1)
 
@@ -347,9 +360,39 @@ def _semantic_power_on_axis(
         if i0 > i1:
             continue
 
-        level = noise_floor_db + float(region.jnr_db)
-        out[i0 : i1 + 1] = np.maximum(out[i0 : i1 + 1], level)
+        ratio = 10.0 ** (float(region.jnr_db) / 10.0)
+        diff[i0] += ratio
+        diff[i1 + 1] -= ratio
 
+    sum_ratio = np.cumsum(diff[:-1])
+    # 数值兜底：理论上不会为负，但浮点误差下可能出现极小负数
+    sum_ratio = np.maximum(sum_ratio, 0.0)
+
+    # T = N * (1 + sum(J/N))
+    out = float(noise_floor_db) + 10.0 * np.log10(1.0 + sum_ratio)
+    return out
+
+
+def _total_power_dbm_to_jnr_db(
+    power_dbm: np.ndarray,
+    *,
+    noise_floor_dbm: float,
+    floor_db: float = JNR_FLOOR_DB,
+) -> np.ndarray:
+    """将总功率（dBm）转换为 JNR（dB，J/N）。
+
+    公式：
+    - T = N + J
+    - JNR = J/N = (T/N) - 1
+    """
+    if power_dbm.size == 0:
+        return power_dbm.astype(float)
+
+    ratio_total = 10.0 ** ((power_dbm.astype(float, copy=False) - float(noise_floor_dbm)) / 10.0)
+    jnr_lin = ratio_total - 1.0
+    out = np.full_like(power_dbm, float(floor_db), dtype=float)
+    mask = jnr_lin > 0.0
+    out[mask] = 10.0 * np.log10(jnr_lin[mask])
     return out
 
 
@@ -580,7 +623,6 @@ def _run_union_impl(
         print(f"语义文件: {task3_semantic_path}")
 
         params_v2 = _load_semantic_params_with_txt_default(task3_semantic_path)
-        params_v2.validate()
         semantic_noise_floor_db = float(params_v2.noise_floor_db)
         target_noise_floor_dbm = float(noise_floor_dbm_1mhz)
 
@@ -654,13 +696,18 @@ def _run_union_impl(
 
         # 合并：同一频点取 max 即可（输出单位：dBm @ 1MHz RBW）
         union_power_dbm = np.maximum(power_ref_on_out_dbm, power_sem_on_out_dbm)
+        union_jnr_db = _total_power_dbm_to_jnr_db(
+            union_power_dbm,
+            noise_floor_dbm=target_noise_floor_dbm,
+        )
 
-        # 保存 npz：只保留两列数组（freq + power），便于下游统一读取
+        # 保存 npz：默认保留 (freq_mhz, power_db)；同时输出 jnr_db 便于做“相对噪声”的指标计算。
         union_npz_path = output_dir / "union_spectrum.npz"
         np.savez(
             union_npz_path,
             freq_mhz=freq_out,
             power_db=union_power_dbm,
+            jnr_db=union_jnr_db,
         )
         print(f"  ✓ 并集频谱数据已保存: {union_npz_path}")
 
@@ -799,4 +846,4 @@ def main(
 
 
 if __name__ == "__main__":
-    sys.exit(main(quiet=False, enable_plot=True))
+    sys.exit(main(quiet=False, enable_plot=False))

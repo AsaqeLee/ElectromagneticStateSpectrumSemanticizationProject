@@ -24,6 +24,7 @@ from ..core.schemas import (
     DEFAULT_SEMANTIC_FREQ_MAX_MHZ,
     DEFAULT_SEMANTIC_NOISE_FLOOR_DB,
     DEFAULT_SEMANTIC_NUM_BINS,
+    JammerRegionV2,
     SemanticEncodingV2,
 )
 
@@ -152,7 +153,33 @@ def decode_semantic_v2(params: SemanticEncodingV2) -> np.ndarray:
     return power
 
 
-def load_semantic_v2_file(path: Union[str, Path]) -> SemanticEncodingV2:
+def _validate_v2_params_relaxed(params: SemanticEncodingV2) -> None:
+    """对 v2 语义参数做“宽松校验”（允许无序/重叠）。
+
+    说明：
+    - 严格校验（`SemanticEncodingV2.validate()`）要求区域按 start_bin 排序且不重叠；
+    - 但某些上游接口可能直接吐出“未排序/可重叠”的区域列表；
+    - 在这些场景下，我们仍希望能加载文件并由下游逻辑（例如态势合成）自行处理合并/叠加。
+    """
+    if params.freq_max_mhz <= params.freq_min_mhz:
+        raise ValueError("freq_max_mhz 必须大于 freq_min_mhz")
+    if params.num_bins < 2:
+        raise ValueError("num_bins 必须 >= 2")
+
+    for i, r in enumerate(params.jammer_regions):
+        if r.start_bin < 0 or r.end_bin < 0:
+            raise ValueError(f"第 {i} 个区域索引不能为负: {r.start_bin}, {r.end_bin}")
+        if r.start_bin >= params.num_bins or r.end_bin >= params.num_bins:
+            raise ValueError(
+                f"第 {i} 个区域越界: start={r.start_bin}, end={r.end_bin}, "
+                f"合法范围 [0, {params.num_bins - 1}]"
+            )
+        # relaxed：允许 start==end；若 start>end，由调用方决定是否交换/修正
+        if r.jnr_db <= 0.0:
+            raise ValueError(f"第 {i} 个区域 jnr_db 必须 > 0, 当前 {r.jnr_db}")
+
+
+def load_semantic_v2_file(path: Union[str, Path], *, strict: bool = True) -> SemanticEncodingV2:
     """从语义参数文件加载 v2 语义编码参数。
     
     支持两种格式：
@@ -160,6 +187,11 @@ def load_semantic_v2_file(path: Union[str, Path]) -> SemanticEncodingV2:
     2. TXT 格式：键值对配置文件（方便不熟悉 JSON 的用户）
     
     文件格式自动识别，无需手动指定。
+
+    参数：
+        strict: 是否启用严格校验（默认 True）。
+            - True：要求区域已按 start_bin 排序且不重叠（符合语义规范）。
+            - False：允许无序/重叠区域（便于兼容上游“原始输出”），但仍进行基础合法性校验。
     
     参数：
         path: 文件路径（.json 或 .txt 扩展名）
@@ -187,7 +219,38 @@ def load_semantic_v2_file(path: Union[str, Path]) -> SemanticEncodingV2:
         # TXT 格式
         data = _parse_txt_format(content)
     
-    return SemanticEncodingV2.from_dict(data)
+    if strict:
+        return SemanticEncodingV2.from_dict(data)
+
+    # 宽松加载：允许无序/重叠。注意：这里不会调用 SemanticEncodingV2.validate()。
+    freq_min_mhz = float(data.get("freq_min_mhz", DEFAULT_SEMANTIC_FREQ_MIN_MHZ))
+    freq_max_mhz = float(data.get("freq_max_mhz", DEFAULT_SEMANTIC_FREQ_MAX_MHZ))
+    num_bins = int(data.get("num_bins", DEFAULT_SEMANTIC_NUM_BINS))
+    noise_floor_db = float(data.get("noise_floor_db", DEFAULT_SEMANTIC_NOISE_FLOOR_DB))
+
+    regions_raw = data.get("jammer_regions", [])
+    regions = []
+    for entry in regions_raw:
+        # entry 可能来自 JSON(dict) 或 TXT(dict)
+        start_bin = int(entry["start_bin"])
+        end_bin = int(entry["end_bin"])
+        jnr_db = float(entry["jnr_db"])
+
+        # 宽松策略：允许 start>end（由下游处理时再决定如何交换），但这里先统一为 start<=end
+        if start_bin > end_bin:
+            start_bin, end_bin = end_bin, start_bin
+
+        regions.append(JammerRegionV2(start_bin=start_bin, end_bin=end_bin, jnr_db=jnr_db))
+
+    params = SemanticEncodingV2(
+        freq_min_mhz=freq_min_mhz,
+        freq_max_mhz=freq_max_mhz,
+        num_bins=num_bins,
+        noise_floor_db=noise_floor_db,
+        jammer_regions=regions,
+    )
+    _validate_v2_params_relaxed(params)
+    return params
 
 
 def decode_file_v2(path: Union[str, Path]) -> Tuple[SemanticEncodingV2, np.ndarray]:
