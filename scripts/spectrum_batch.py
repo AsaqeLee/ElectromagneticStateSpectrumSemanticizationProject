@@ -26,14 +26,15 @@ import numpy as np
 # Note: 编码处理已在各模块中完成
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+SRC_ROOT = ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
 
-from src.signal.spectrum_composer import SpectrumComposerConfig, JammerSpec, compose_spectrum
-from src.signal.stitcher import StitchMode
-from src.pipeline.stitch.stitch_real_data import stitch_from_bin_directory
-from src.io.reader import BinDataType
-from src.semantics.decode_v2 import decode_file_v2
+from electromagnetic_state.signal.spectrum_composer import SpectrumComposerConfig, JammerSpec, compose_spectrum
+from electromagnetic_state.signal.stitcher import StitchMode
+from electromagnetic_state.pipeline.stitch.stitch_real_data import stitch_from_bin_directory
+from electromagnetic_state.io.reader import BinDataType
+from electromagnetic_state.semantics.decode_v2 import decode_file_v2
 
 
 def _import_plt():

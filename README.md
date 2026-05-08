@@ -38,59 +38,23 @@
 
 ```
 📦 electromagneticState/
-├── 📂 src/                         # 源代码（4层架构）
-│   ├── 📁 core/                    # Layer 0: 核心数据结构与配置
-│   │   ├── schemas.py              #   数据类定义（IQData, SemanticParams, SemanticEncodingV2）
-│   │   └── config.py               #   全局配置（频段、窗口中心、默认参数）
-│   │
-│   ├── 📁 io/                      # Layer 1: 数据输入输出
-│   │   └── reader.py               #   IQ 文件读取（.npy/.npz/.h5/.bin）
-│   │
-│   ├── 📁 signal/                  # Layer 1: 信号处理算法
-│   │   ├── jammers.py              #   6 种干扰信号生成器
-│   │   ├── spectrum.py             #   FFT 功率谱计算
-│   │   ├── segmentation.py         #   频段窗口划分与掩码
-│   │   ├── spectrum_composer.py    #   宽带频谱合成（任务一）
-│   │   └── stitcher.py             #   分段频谱拼接（任务二）
-│   │
-│   ├── 📁 semantics/               # Layer 1: 语义编码与解码
-│   │   ├── decode.py               #   v1 单区域语义解码
-│   │   ├── decode_multi.py         #   v1 多区域/自动解码
-│   │   ├── decode_v2.py            #   v2 标准化解码
-│   │   └── edge_detect.py          #   边缘检测与自动编码
-│   │
-│   ├── 📁 pipeline/                # Layer 2: 业务流程编排
-│   │   ├── compose/                #   任务一流程（频谱合成）
-│   │   ├── stitch/                 #   任务二流程（频谱拼接）
-│   │   ├── semantic/               #   任务三流程（语义恢复）
-│   │   └── utils/                  #   辅助工具
-│   │
-│   └── 📁 visualization/           # 可视化工具
-│       └── viz/                    #   频谱图绘制
-
+├── 📂 src/                         # 源码目录
+│   └── 📁 electromagnetic_state/   # 唯一顶层包
+│       ├── 📁 core/                # Layer 0: 核心数据结构与配置
+│       ├── 📁 io/                  # Layer 1: 数据输入输出
+│       ├── 📁 signal/              # Layer 1: 信号处理算法
+│       ├── 📁 semantics/           # Layer 1: 语义编码与解码
+│       ├── 📁 pipeline/            # Layer 2: 业务流程编排
+│       ├── 📁 visualization/       # 可视化工具
+│       └── 📁 viz/                 # 轻量绘图工具
 ├── 📂 scripts/                     # Layer 3: 命令行工具
-│   ├── spectrum_cli.py             #   交互式 CLI（推荐新手）
-│   └── spectrum_batch.py           #   批处理 CLI（推荐自动化）
-
-├── 📂 tests/                       # 单元测试与集成测试（34个测试）
+├── 📂 tests/                       # 单元测试与集成测试
 ├── 📂 docs/                        # 活跃技术文档
-│   ├── semantic_encoding_requirements.md  #   语义编码规范 v2
-│   ├── TASK2_DATA_FORMATS.md              #   数据格式说明
-│   └── 频谱语义化表征及频谱恢复.md         #   原始需求文档
-
 ├── 📂 archive/                     # 过时文档归档
-│   ├── reports/                    #   历史任务报告
-│   │   ├── bug_fixes/              #     Bug修复记录
-│   │   ├── documentation/          #     文档工作报告
-│   │   ├── project_tasks/          #     项目任务记录
-│   │   └── analysis/               #     分析报告
-│   └── cli_docs/                   #   旧版CLI文档
-
 ├── 📂 data/                        # 数据输出目录
-├── 📂 data_semantic/               # 语义参数配置（10 个测试用例）
+├── 📂 data_semantic/               # 语义参数配置
 ├── 📂 evidence/                    # 改进建议与评审记录
-
-├── README.md                       # 项目说明（本文档）
+├── README.md                       # 项目说明
 └── pyproject.toml                  # Python 项目配置
 ```
 
@@ -138,7 +102,7 @@ pytest tests/test_semantics_v2.py tests/test_io_reader.py -v
 #### 方式一：交互式 CLI（推荐新手）
 
 ```bash
-python spectrum_cli.py
+python scripts/spectrum_cli.py
 ```
 
 选择任务一、二、三，按提示操作即可生成频谱。
@@ -147,14 +111,14 @@ python spectrum_cli.py
 
 ```bash
 # 任务一：合成干扰频谱
-python spectrum_batch.py compose \
+python scripts/spectrum_batch.py compose \
   --jammer single_tone:500:25 \
   --jammer sweep:1500:20 \
   -o data/composed.npz \
   --plot data/composed.png
 
 # 任务二：拼接真实 IQ 数据（需先准备 .bin 文件）
-python spectrum_batch.py stitch \
+python scripts/spectrum_batch.py stitch \
   --input-dir data_segment \
   --pattern "*.bin" \
   --dtype int16 \
@@ -163,7 +127,7 @@ python spectrum_batch.py stitch \
   --plot data/stitched.png
 
 # 任务三：从语义参数恢复频谱
-python spectrum_batch.py decode-v2 \
+python scripts/spectrum_batch.py decode-v2 \
   --input data_semantic/semantic_case01.json \
   -o data/recovered.npz
 ```
@@ -171,7 +135,7 @@ python spectrum_batch.py decode-v2 \
 #### 方式三：Python 脚本（推荐开发者）
 
 ```python
-from src.signal.spectrum_composer import SpectrumComposerConfig, add_jammer, compose_spectrum
+from electromagnetic_state.signal.spectrum_composer import SpectrumComposerConfig, add_jammer, compose_spectrum
 import numpy as np
 
 # 创建配置
@@ -205,15 +169,15 @@ print(f"✓ 生成 {len(freq_mhz)} 个频点的频谱")
   - `spectrum_cli.py` – 交互式 CLI（任务一/二/三）；
   - `spectrum_batch.py` – 批处理 CLI（compose / stitch / decode / decode‑v2）。
 - Python 模块 / pipeline（推荐给开发者与集成方）：
-  - `src/pipeline/*.py` – 可通过 `python -m src.pipeline.xxx` 调用；
-  - 直接导入 `src.signal` / `src.semantics` / `src.io` 下的函数。
+  - `src/pipeline/*.py` – 可通过 `python -m electromagnetic_state.pipeline.xxx` 调用；
+  - 直接导入 `electromagnetic_state.signal` / `electromagnetic_state.semantics` / `electromagnetic_state.io` 下的函数。
 
 下面分 CLI 与 Pipeline 两种方式给出典型用法。
 
 ### 3. 交互式 CLI（推荐快速体验）
 
 ```bash
-python spectrum_cli.py
+python scripts/spectrum_cli.py
 ```
 
 主菜单：
@@ -230,7 +194,7 @@ python spectrum_cli.py
 
 ```bash
 # 组合两个干扰，生成宽带频谱并保存 npz
-python spectrum_batch.py compose \
+python scripts/spectrum_batch.py compose \
   --jammer single_tone:500:20 \
   --jammer sweep:1200:18 \
   -o data/composed.npz \
@@ -240,7 +204,7 @@ python spectrum_batch.py compose \
 #### 4.2 任务二：频谱分段拼接（stitch）
 
 ```bash
-python spectrum_batch.py stitch \
+python scripts/spectrum_batch.py stitch \
   --input-dir data_segment \
   --pattern "*.bin" \
   --dtype int16 \
@@ -264,7 +228,7 @@ python spectrum_batch.py stitch \
 **v1（兼容旧格式，单区域或多区域自动判断）**：
 
 ```bash
-python spectrum_batch.py decode \
+python scripts/spectrum_batch.py decode \
   --input data/demo_semantic_v1.json \
   -o data/recovered_v1.npz
 ```
@@ -277,7 +241,7 @@ python spectrum_batch.py decode \
 **v2（推荐的多区域语义编码格式）**：
 
 ```bash
-python spectrum_batch.py decode-v2 \
+python scripts/spectrum_batch.py decode-v2 \
   --input data_semantic/semantic_case01.json \
   -o data/recovered_v2_case01.npz
 ```
@@ -289,12 +253,12 @@ v2 JSON 结构参见 `docs/semantic_encoding_requirements.md`：
 
 ## Pipeline 示例（Python 模块方式）
 
-以下示例假定你在工程根目录，且环境中已能导入 `src.*`。
+以下示例假定你在工程根目录，且环境中已能导入 `electromagnetic_state.*`。
 
 ### 1. 任务一：干扰功率谱合成
 
 ```python
-from src.signal.spectrum_composer import SpectrumComposerConfig, add_jammer, compose_spectrum
+from electromagnetic_state.signal.spectrum_composer import SpectrumComposerConfig, add_jammer, compose_spectrum
 import numpy as np
 
 cfg = SpectrumComposerConfig(
@@ -314,7 +278,7 @@ np.savez("data/task1_composed.npz", freq_mhz=freq_mhz, power_db=power_db)
 或使用 pipeline CLI：
 
 ```bash
-python -m src.pipeline.compose_spectrum \
+python -m electromagnetic_state.pipeline.compose_spectrum \
   --jammer single_tone:500:20 \
   --jammer sweep:1800:22 \
   --output-npz data/task1_composed.npz \
@@ -325,9 +289,9 @@ python -m src.pipeline.compose_spectrum \
 
 ```python
 from pathlib import Path
-from src.io.reader import BinDataType
-from src.signal.stitcher import StitchMode
-from src.pipeline.stitch.stitch_real_data import stitch_from_bin_directory
+from electromagnetic_state.io.reader import BinDataType
+from electromagnetic_state.signal.stitcher import StitchMode
+from electromagnetic_state.pipeline.stitch.stitch_real_data import stitch_from_bin_directory
 
 stitched, segments = stitch_from_bin_directory(
     directory=Path("data_segment"),
@@ -353,8 +317,8 @@ np.savez(
 
 ```python
 import numpy as np
-from src.core.schemas import SemanticParams
-from src.semantics.decode import decode_semantic
+from electromagnetic_state.core.schemas import SemanticParams
+from electromagnetic_state.semantics.decode import decode_semantic
 
 params = SemanticParams(
     yonghu=1,
@@ -376,7 +340,7 @@ power_db = decode_semantic(params)
 评估（v1 自动模式）：
 
 ```bash
-python -m src.pipeline.semantic_eval \
+python -m electromagnetic_state.pipeline.semantic_eval \
   --reference data/stitched_30_2500.npz \
   --semantic data/demo_semantic_v1.json \
   --report data/semantic_eval_v1.json
@@ -386,8 +350,8 @@ python -m src.pipeline.semantic_eval \
 
 ```python
 import numpy as np
-from src.core.schemas import SemanticEncodingV2, JammerRegionV2
-from src.semantics.decode_v2 import decode_semantic_v2
+from electromagnetic_state.core.schemas import SemanticEncodingV2, JammerRegionV2
+from electromagnetic_state.semantics.decode_v2 import decode_semantic_v2
 
 params_v2 = SemanticEncodingV2(
     freq_min_mhz=30.0,
@@ -406,7 +370,7 @@ power_db_v2 = decode_semantic_v2(params_v2)
 评估（v2）：
 
 ```bash
-python -m src.pipeline.semantic_eval_v2 \
+python -m electromagnetic_state.pipeline.semantic_eval_v2 \
   --reference data/stitched_30_2500.npz \
   --semantic data_semantic/semantic_case01.json \
   --report data/semantic_eval_v2_case01.json
@@ -521,28 +485,28 @@ Core (Layer 0)
 **频谱合成**:
 
 ```python
-from src.signal.spectrum_composer import compose_spectrum, add_jammer
+from electromagnetic_state.signal.spectrum_composer import compose_spectrum, add_jammer
 ```
 
 **频谱拼接**:
 
 ```python
-from src.signal.stitcher import stitch_segments
-from src.pipeline.stitch.stitch_real_data import stitch_from_bin_directory
+from electromagnetic_state.signal.stitcher import stitch_segments
+from electromagnetic_state.pipeline.stitch.stitch_real_data import stitch_from_bin_directory
 ```
 
 **语义解码**:
 
 ```python
-from src.semantics.decode import decode_semantic          # v1 单区域
-from src.semantics.decode_multi import decode_semantic_auto  # v1 自动模式
-from src.semantics.decode_v2 import decode_semantic_v2      # v2 标准格式
+from electromagnetic_state.semantics.decode import decode_semantic          # v1 单区域
+from electromagnetic_state.semantics.decode_multi import decode_semantic_auto  # v1 自动模式
+from electromagnetic_state.semantics.decode_v2 import decode_semantic_v2      # v2 标准格式
 ```
 
 **数据 IO**:
 
 ```python
-from src.io.reader import load_iq_file, load_bin_segments
+from electromagnetic_state.io.reader import load_iq_file, load_bin_segments
 ```
 
 ### 扩展开发
@@ -622,7 +586,7 @@ pytest tests/test_semantics_v2.py -vv --tb=long
 
 ```bash
 # 方法一：使用 CLI
-python spectrum_batch.py stitch \
+python scripts/spectrum_batch.py stitch \
   --input-dir data_segment \
   --pattern "*.bin" \
   --dtype int16 \
@@ -630,7 +594,7 @@ python spectrum_batch.py stitch \
   -o data/batch_stitched.npz
 
 # 方法二：Python 脚本
-from src.io.reader import load_bin_segments, BinDataType
+from electromagnetic_state.io.reader import load_bin_segments, BinDataType
 segments = load_bin_segments("data_segment", "*.bin", BinDataType.INT16)
 print(f"加载了 {len(segments)} 个分段")
 ```

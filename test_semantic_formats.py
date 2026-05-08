@@ -5,6 +5,10 @@ from pathlib import Path
 import sys
 import numpy as np
 
+SRC_ROOT = Path(__file__).resolve().parent / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
 def _ensure_console_utf8() -> None:
     """Windows 控制台 UTF-8 兜底（避免 import 阶段修改全局 stdout/stderr）。"""
     if sys.platform != "win32":
@@ -25,11 +29,11 @@ def _ensure_console_utf8() -> None:
     _try_reconfigure(sys.stdout)
     _try_reconfigure(sys.stderr)
 
-from src.semantics.decode_v2 import (
+from electromagnetic_state.semantics.decode_v2 import (
     load_semantic_v2_file,
     decode_semantic_v2,
 )
-from src.core.schemas import SemanticEncodingV2
+from electromagnetic_state.core.schemas import SemanticEncodingV2
 
 
 def create_test_files():

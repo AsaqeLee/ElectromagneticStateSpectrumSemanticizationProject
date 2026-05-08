@@ -5,16 +5,11 @@ Quick Test Script - Verify batch_generate_spectrum.py functionality
 Tests: imports, jammer generation, overlap prevention
 """
 import sys
-from pathlib import Path
-
-# Add project root to path
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
 
 try:
     # Test imports
     print("Testing imports...")
-    from scripts.batch_generate_spectrum import (
+    from batch_generate_spectrum import (
         estimate_bandwidth,
         check_overlap,
         generate_random_jammers,

@@ -11,8 +11,8 @@ import numpy as np
 try:  # pragma: no cover
     from ...semantics.decode_v2 import decode_file_v2
 except ImportError:  # pragma: no cover
-    sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
-    from semantics.decode_v2 import decode_file_v2
+    sys.path.append(str(Path(__file__).resolve().parents[3]))
+    from electromagnetic_state.semantics.decode_v2 import decode_file_v2
 
 
 def _load_reference(path: Path) -> tuple[np.ndarray, np.ndarray]:

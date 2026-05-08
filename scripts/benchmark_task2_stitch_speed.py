@@ -35,13 +35,14 @@ from typing import List
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+SRC_ROOT = ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
 
-from src.core.schemas import SamplingConfig  # type: ignore
-from src.io.reader import BinDataType, load_bin_segments  # type: ignore
-from src.signal.spectrum import compute_segmented_power_spectrum  # type: ignore
-from src.signal.stitcher import SpectrumSegment, StitchMode, stitch_segments  # type: ignore
+from electromagnetic_state.core.schemas import SamplingConfig  # type: ignore
+from electromagnetic_state.io.reader import BinDataType, load_bin_segments  # type: ignore
+from electromagnetic_state.signal.spectrum import compute_segmented_power_spectrum  # type: ignore
+from electromagnetic_state.signal.stitcher import SpectrumSegment, StitchMode, stitch_segments  # type: ignore
 
 
 @dataclass(frozen=True)

@@ -19,8 +19,8 @@ import numpy as np
 try:  # pragma: no cover - 兼容直接运行脚本
     from ...signal.jammers import JAMMER_REGISTRY, JammerConfig, generate_jammer
 except ImportError:  # pragma: no cover
-    sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
-    from signal.jammers import JAMMER_REGISTRY, JammerConfig, generate_jammer
+    sys.path.append(str(Path(__file__).resolve().parents[3]))
+    from electromagnetic_state.signal.jammers import JAMMER_REGISTRY, JammerConfig, generate_jammer
 
 
 def _ensure_dir(path: Path) -> None:

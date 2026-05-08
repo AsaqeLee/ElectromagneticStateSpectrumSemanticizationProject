@@ -52,15 +52,14 @@ def main() -> int:
     """主入口：调用 run_union.main() 并透传返回码。"""
     _ensure_console_utf8()
 
-    # 确保从任意工作目录执行时，都能 import 到项目代码
-    root = Path(__file__).resolve().parents[1]
-    sys.path.insert(0, str(root))
-
     try:
-        import scripts.run_union as run_union
-    except Exception as exc:
-        print(f"[ERROR] 导入 scripts.run_union 失败：{exc}")
-        return 1
+        from . import run_union  # type: ignore
+    except Exception:
+        try:
+            import run_union  # type: ignore
+        except Exception as exc:
+            print(f"[ERROR] 导入 run_union 失败：{exc}")
+            return 1
 
     print("=" * 80)
     print("主程序示例：开始调用 scripts.run_union.main()")

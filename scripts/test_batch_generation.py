@@ -4,14 +4,9 @@
 快速测试脚本 - 生成2组数据验证功能
 """
 import sys
-from pathlib import Path
 
-# 添加项目根目录
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
-
-# 导入批量生成脚本的函数
-from scripts.batch_generate_spectrum import generate_one_simulation
+# 导入同目录批量生成脚本的函数
+from batch_generate_spectrum import generate_one_simulation
 
 def quick_test():
     """快速测试：生成2组数据"""

@@ -4,9 +4,16 @@ Elite级别频谱可视化使用指南
 演示如何使用增强版可视化模块生成「甲方级别」的高端频谱图
 """
 
-import numpy as np
+import sys
 from pathlib import Path
-from src.visualization.enhanced_plot import (
+
+import numpy as np
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC_ROOT = ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+from electromagnetic_state.visualization.enhanced_plot import (
     plot_spectrum_elite,
     plot_comparison_elite,
     ELITE_COLORS
@@ -126,7 +133,7 @@ def demo_cli_integration():
     code = """
 # 在 scripts/spectrum_cli.py 中替换 save_spectrum_png 函数
 
-from src.visualization.enhanced_plot import plot_spectrum_elite
+from electromagnetic_state.visualization.enhanced_plot import plot_spectrum_elite
 
 def save_spectrum_elite_png(
     freq_mhz: np.ndarray, 

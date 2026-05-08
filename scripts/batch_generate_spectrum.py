@@ -31,11 +31,13 @@ except ImportError:
     plt = None
     print("WARNING: matplotlib not installed, PNG generation will be skipped")
 
-# Add project root directory to sys.path
+# Add source root directory to sys.path
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+SRC_ROOT = ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
 
-from src.signal.spectrum_composer import (
+from electromagnetic_state.signal.spectrum_composer import (
     SpectrumComposerConfig,
     JammerSpec,
     compose_spectrum,

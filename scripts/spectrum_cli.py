@@ -40,29 +40,31 @@ if sys.platform == "win32":
         # 在某些环境下 stdout 可能没有 buffer 属性，忽略即可
         pass
 
-# 添加项目根目录到 sys.path，确保可以导入 src 包
+# 将 src 源码目录加入 sys.path，避免暴露顶层 `src` 包名
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+SRC_ROOT = ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
 
-from src.signal.spectrum_composer import (
+from electromagnetic_state.signal.spectrum_composer import (
     SpectrumComposerConfig,
     JammerSpec,
     compose_spectrum,
 )
-from src.signal.stitcher import (
+from electromagnetic_state.signal.stitcher import (
     SpectrumSegment,
     stitch_segments,
     StitchMode,
     load_segment_from_npz,
 )
-from src.pipeline.stitch.stitch_real_data import stitch_from_bin_directory
-from src.io.reader import BinDataType, load_iq_file
-from src.signal.spectrum import compute_power_spectrum, compute_segmented_power_spectrum
-from src.semantics.decode_v2 import (
+from electromagnetic_state.pipeline.stitch.stitch_real_data import stitch_from_bin_directory
+from electromagnetic_state.io.reader import BinDataType, load_iq_file
+from electromagnetic_state.signal.spectrum import compute_power_spectrum, compute_segmented_power_spectrum
+from electromagnetic_state.semantics.decode_v2 import (
     decode_semantic_v2 as decode_semantic,
     load_semantic_v2_file as load_semantic_file,
 )
-from src.core.schemas import (
+from electromagnetic_state.core.schemas import (
     SamplingConfig,
     DEFAULT_SEMANTIC_FREQ_MIN_MHZ,
     DEFAULT_SEMANTIC_FREQ_MAX_MHZ,
@@ -71,7 +73,10 @@ from src.core.schemas import (
 )
 
 # 任务二+任务三 并集输出（脚本复用）
-import scripts.run_union as run_union
+try:
+    from . import run_union  # type: ignore
+except Exception:
+    import run_union  # type: ignore
 
 
 # 干扰类型选项表：内部使用英文标识，对用户展示中文描述
@@ -278,7 +283,7 @@ def task1_interactive():
                 "seed": seed,
                 "jammers": [
                     {
-                        "type": j.jam_type,  # 与 src.pipeline.compose_spectrum.load_jammer_config_file 对齐
+                        "type": j.jam_type,  # 与 electromagnetic_state.pipeline.compose_spectrum.load_jammer_config_file 对齐
                         "center_freq_mhz": j.center_freq_mhz,
                         "jnr_db": j.jnr_db,
                         **(

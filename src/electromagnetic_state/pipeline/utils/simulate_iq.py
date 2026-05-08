@@ -15,11 +15,11 @@ try:  # pragma: no cover - 兼容直接运行脚本
     from ...signal.spectrum import compute_power_spectrum
     from ...viz.plots import plot_spectrum
 except ImportError:  # pragma: no cover
-    sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
-    from core.config import ProjectConfig, default_config
-    from core.schemas import IQData, SamplingConfig
-    from signal.spectrum import compute_power_spectrum
-    from viz.plots import plot_spectrum
+    sys.path.append(str(Path(__file__).resolve().parents[3]))
+    from electromagnetic_state.core.config import ProjectConfig, default_config
+    from electromagnetic_state.core.schemas import IQData, SamplingConfig
+    from electromagnetic_state.signal.spectrum import compute_power_spectrum
+    from electromagnetic_state.viz.plots import plot_spectrum
 
 
 def _generate_carriers(num_samples: int, sample_rate: float, freqs_mhz: Sequence[float]) -> np.ndarray:

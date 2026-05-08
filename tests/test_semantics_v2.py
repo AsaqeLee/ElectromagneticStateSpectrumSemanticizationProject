@@ -3,8 +3,8 @@ import json
 
 import numpy as np
 
-from src.core.schemas import SemanticEncodingV2
-from src.semantics.decode_v2 import decode_semantic_v2, decode_file_v2, load_semantic_v2_file
+from electromagnetic_state.core.schemas import SemanticEncodingV2
+from electromagnetic_state.semantics.decode_v2 import decode_semantic_v2, decode_file_v2, load_semantic_v2_file
 import pytest
 
 

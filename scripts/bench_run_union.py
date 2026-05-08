@@ -24,9 +24,6 @@ from typing import Iterable
 
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    # 允许 `import scripts.run_union`（scripts 为隐式 namespace package）
-    sys.path.insert(0, str(ROOT))
 
 
 def _percentile_sorted(values_sorted: list[float], p: float) -> float:
@@ -49,7 +46,7 @@ def _format_ms(ms: float) -> str:
 
 
 def _bench_hot(nfft_list: Iterable[int], repeat: int, warmup: int) -> None:
-    from scripts import run_union  # 延迟导入：让基准更清晰
+    import run_union  # 延迟导入：让基准更清晰
 
     print("================================================================================")
     print("run_union 热路径基准（同进程，quiet=True，enable_plot=False）")
@@ -93,7 +90,7 @@ def _bench_cold(nfft: int) -> None:
         "-c",
         (
             "import sys; "
-            "from scripts import run_union; "
+            "import run_union; "
             f"sys.exit(run_union.main(quiet=True, enable_plot=False, segment_fft_size={int(nfft)}))"
         ),
     ]
@@ -105,7 +102,7 @@ def _bench_cold(nfft: int) -> None:
     print(f"cmd: {' '.join(cmd)}")
 
     t0 = time.perf_counter()
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(ROOT / "scripts"))
     cost_ms = (time.perf_counter() - t0) * 1000.0
     print(f"exit_code={proc.returncode}, wall={_format_ms(cost_ms)}")
     if proc.returncode != 11:

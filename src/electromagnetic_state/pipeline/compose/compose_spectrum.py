@@ -15,8 +15,8 @@ import numpy as np
 try:  # pragma: no cover
     from ...signal.spectrum_composer import SpectrumComposerConfig, add_jammer, compose_spectrum
 except ImportError:  # pragma: no cover
-    sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
-    from signal.spectrum_composer import SpectrumComposerConfig, add_jammer, compose_spectrum
+    sys.path.append(str(Path(__file__).resolve().parents[3]))
+    from electromagnetic_state.signal.spectrum_composer import SpectrumComposerConfig, add_jammer, compose_spectrum
 
 
 def parse_jammer_spec(spec_str: str) -> tuple[str, float, float]:
@@ -59,7 +59,7 @@ def main() -> None:
         epilog="""
 示例用法：
   # 通过命令行参数添加干扰
-  python -m src.pipeline.compose_spectrum \\
+  python -m electromagnetic_state.pipeline.compose_spectrum \\
     --jammer single_tone:500:20 \\
     --jammer multi_tone:1200:18 \\
     --jammer sweep:1800:22 \\
@@ -67,7 +67,7 @@ def main() -> None:
     --output-png data/composed_spectrum.png
 
   # 从JSON配置文件加载干扰
-  python -m src.pipeline.compose_spectrum \\
+  python -m electromagnetic_state.pipeline.compose_spectrum \\
     --config-file data/jammer_config.json \\
     --output-npz data/composed_spectrum.npz
         """,

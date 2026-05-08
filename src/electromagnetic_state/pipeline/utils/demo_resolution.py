@@ -19,10 +19,10 @@ try:  # pragma: no cover
     from ...signal.spectrum import compute_power_spectrum
     from ...viz.plots import plot_spectrum
 except ImportError:  # pragma: no cover
-    sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
-    from core.schemas import IQData, SamplingConfig
-    from signal.spectrum import compute_power_spectrum
-    from viz.plots import plot_spectrum
+    sys.path.append(str(Path(__file__).resolve().parents[3]))
+    from electromagnetic_state.core.schemas import IQData, SamplingConfig
+    from electromagnetic_state.signal.spectrum import compute_power_spectrum
+    from electromagnetic_state.viz.plots import plot_spectrum
 
 
 def generate_tone(fs_hz: float, duration_ms: float, freq_hz: float, snr_db: float) -> np.ndarray:

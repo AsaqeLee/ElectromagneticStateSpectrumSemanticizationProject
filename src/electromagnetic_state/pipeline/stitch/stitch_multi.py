@@ -21,10 +21,10 @@ try:  # pragma: no cover - ????????
     from ...core.schemas import IQData, SamplingConfig
     from ...signal.spectrum import compute_power_spectrum
 except ImportError:  # pragma: no cover
-    sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
-    from core.config import DEFAULT_WINDOW_CENTERS_MHZ
-    from core.schemas import IQData, SamplingConfig
-    from signal.spectrum import compute_power_spectrum
+    sys.path.append(str(Path(__file__).resolve().parents[3]))
+    from electromagnetic_state.core.config import DEFAULT_WINDOW_CENTERS_MHZ
+    from electromagnetic_state.core.schemas import IQData, SamplingConfig
+    from electromagnetic_state.signal.spectrum import compute_power_spectrum
 
 
 COMB_PATTERN = re.compile(

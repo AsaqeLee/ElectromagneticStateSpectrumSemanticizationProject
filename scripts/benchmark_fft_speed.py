@@ -32,10 +32,11 @@ from typing import Tuple, Optional
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+SRC_ROOT = ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
 
-from src.io.reader import load_iq_file, BinDataType  # type: ignore
+from electromagnetic_state.io.reader import load_iq_file, BinDataType  # type: ignore
 
 
 def _generate_iq_data(total_samples: int, seed: Optional[int] = 42) -> np.ndarray:

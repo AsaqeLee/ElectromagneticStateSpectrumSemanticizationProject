@@ -4,7 +4,7 @@
 
 用法（示例）::
 
-    python -m src.pipeline.interactive_cli
+    python -m electromagnetic_state.pipeline.interactive_cli
 
 功能说明：
 - 任务一：在 30-2500 MHz 频段内，基于 jam.m 思想组合生成干扰功率谱；

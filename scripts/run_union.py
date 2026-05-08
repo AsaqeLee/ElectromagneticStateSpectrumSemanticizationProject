@@ -57,20 +57,22 @@ POWER_EPS = 1e-12
 # 如果不提前固定 backend，Windows 下可能自动选中 Qt 后端并产生 DPI 警告噪音。
 os.environ.setdefault("MPLBACKEND", "Agg")
 
-# 确保可以导入 src 包：将仓库根目录加入 sys.path
+# 将源码目录加入 sys.path，避免把仓库根目录暴露成可导入包空间
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+SRC_ROOT = ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
 
-from src.io.reader import BinDataType  # type: ignore
-from src.signal.stitcher import (  # type: ignore
+from electromagnetic_state.io.reader import BinDataType  # type: ignore
+from electromagnetic_state.signal.stitcher import (  # type: ignore
     StitchMode,
 )
-from src.pipeline.stitch.stitch_real_data import stitch_from_bin_directory  # type: ignore
-from src.semantics.decode_v2 import (  # type: ignore
+from electromagnetic_state.pipeline.stitch.stitch_real_data import stitch_from_bin_directory  # type: ignore
+from electromagnetic_state.semantics.decode_v2 import (  # type: ignore
     decode_semantic_v2,
     load_semantic_v2_file,
 )
-from src.core.schemas import (  # type: ignore
+from electromagnetic_state.core.schemas import (  # type: ignore
     DEFAULT_SEMANTIC_FREQ_MIN_MHZ,
     DEFAULT_SEMANTIC_FREQ_MAX_MHZ,
 )
@@ -498,7 +500,7 @@ def _run_task2_stitch(
         print(f"  警告 任务二跳过：{e}")
         print("  将在并集阶段使用全底噪参考谱")
         # 返回空频谱对象
-        from src.signal.stitcher import StitchedSpectrum
+        from electromagnetic_state.signal.stitcher import StitchedSpectrum
         return StitchedSpectrum(
             freq_mhz=np.array([]),
             power_db=np.array([]),
