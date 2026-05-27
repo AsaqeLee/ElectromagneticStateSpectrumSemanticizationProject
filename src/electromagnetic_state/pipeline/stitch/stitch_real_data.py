@@ -40,6 +40,7 @@ def stitch_from_bin_directory(
     time_agg_mode: str = "mean",
     segment_fft_size: Optional[int] = None,
     default_sample_rate_hz: Optional[float] = 204.8e6,
+    quiet: bool = False,
 ) -> tuple:
     """从目录中的.bin文件拼接频谱。
 
@@ -69,7 +70,8 @@ def stitch_from_bin_directory(
         bin_dtype,
         default_sample_rate_hz=default_sample_rate_hz,
     )
-    print(f"已加载 {len(iq_list)} 个IQ分段")
+    if not quiet:
+        print(f"已加载 {len(iq_list)} 个IQ分段")
 
     if not iq_list:
         raise ValueError("未找到有效的IQ数据")
@@ -121,9 +123,12 @@ def stitch_from_bin_directory(
         segments.append(seg)
 
         jam_type = iq.meta.get("jam_type", "unknown")
-        print(f"  分段: {jam_type} @ {seg.center_freq_mhz:.1f} MHz, "
-              f"带宽 {seg.bandwidth_mhz:.1f} MHz, "
-              f"功率范围 [{power_db.min():.1f}, {power_db.max():.1f}] dB")
+        if not quiet:
+            print(
+                f"  分段: {jam_type} @ {seg.center_freq_mhz:.1f} MHz, "
+                f"带宽 {seg.bandwidth_mhz:.1f} MHz, "
+                f"功率范围 [{power_db.min():.1f}, {power_db.max():.1f}] dB"
+            )
 
     # 拼接
     stitched = stitch_segments(segments, mode=mode, fill_value=fill_value)

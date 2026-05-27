@@ -161,7 +161,7 @@ def _validate_v2_params_relaxed(params: SemanticEncodingV2) -> None:
     - 但某些上游接口可能直接吐出“未排序/可重叠”的区域列表；
     - 在这些场景下，我们仍希望能加载文件并由下游逻辑（例如态势合成）自行处理合并/叠加。
     """
-    if params.freq_max_mhz <= params.freq_min_mhz:
+    if params.freq_max_mhz < params.freq_min_mhz:
         raise ValueError("freq_max_mhz 必须大于 freq_min_mhz")
     if params.num_bins < 2:
         raise ValueError("num_bins 必须 >= 2")
@@ -175,7 +175,7 @@ def _validate_v2_params_relaxed(params: SemanticEncodingV2) -> None:
                 f"合法范围 [0, {params.num_bins - 1}]"
             )
         # relaxed：允许 start==end；若 start>end，由调用方决定是否交换/修正
-        if r.jnr_db <= 0.0:
+        if r.jnr_db < 0.0:
             raise ValueError(f"第 {i} 个区域 jnr_db 必须 > 0, 当前 {r.jnr_db}")
 
 
