@@ -14,6 +14,7 @@
 - 本脚本输出的 `power_db` 现在约定为 **dBm @ 1MHz RBW**；
 - 绝对刻度通过“噪声底噪对齐”的方式标定：将参考谱的噪声低分位对齐到 `noise_floor_dbm_1mhz`（默认 -105 dBm）。
   这能保证底噪基准正确，但严格的“绝对功率”仍依赖前端链路一致性与更完善的校准体系。
+- 导出的 `jnr_db` 与 `decode_semantic_v2()` 保持同一口径，表示“高于底噪多少 dB”，不再做 `J/N` 线性域换算。
 
 用法（在仓库根目录执行）：
 
@@ -33,10 +34,15 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
+import hashlib
+import time
 from contextlib import suppress
+from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 import numpy as np
 
@@ -63,10 +69,14 @@ SRC_ROOT = ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from electromagnetic_state.io.reader import BinDataType  # type: ignore
+from electromagnetic_state.io.reader import BinDataType, load_iq_file, parse_bin_filename  # type: ignore
 from electromagnetic_state.signal.stitcher import (  # type: ignore
     StitchMode,
+    SpectrumSegment,
+    StitchedSpectrum,
+    stitch_segments,
 )
+from electromagnetic_state.signal.spectrum import compute_power_spectrum, compute_segmented_power_spectrum  # type: ignore
 from electromagnetic_state.pipeline.stitch.stitch_real_data import stitch_from_bin_directory  # type: ignore
 from electromagnetic_state.semantics.decode_v2 import (  # type: ignore
     decode_semantic_v2,
@@ -75,7 +85,58 @@ from electromagnetic_state.semantics.decode_v2 import (  # type: ignore
 from electromagnetic_state.core.schemas import (  # type: ignore
     DEFAULT_SEMANTIC_FREQ_MIN_MHZ,
     DEFAULT_SEMANTIC_FREQ_MAX_MHZ,
+    SamplingConfig,
 )
+
+
+SEMANTIC_TIMESTAMPED_NAME_RE = re.compile(
+    r"^semantic_(?P<ts>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})(?:_[^.]+)?\.(txt|json)$",
+    re.IGNORECASE,
+)
+
+
+@dataclass(frozen=True)
+class UnionSpectrumSnapshot:
+    """一次性计算后的频谱快照。"""
+
+    freq_mhz: np.ndarray
+    power_db: np.ndarray
+    jnr_db: np.ndarray
+    power_iq_dbm: np.ndarray
+    power_semantic_dbm: np.ndarray
+    has_iq: bool
+    has_semantic: bool
+    stitched: object
+    semantic_path: Optional[Path]
+    semantic_params: Optional[object]
+    semantic_input_df_mhz: float
+    semantic_noise_floor_db: Optional[float]
+    output_df_mhz: float
+    target_noise_floor_dbm_1mhz: float
+
+
+@dataclass
+class IQSpectrumCacheEntry:
+    """单个 IQ 文件的频谱缓存条目。"""
+
+    signature: Tuple[str, int, int]
+    segment_fft_size: int
+    time_agg_mode: str
+    segment: SpectrumSegment
+
+
+@dataclass
+class IQSpectrumCache:
+    """实时 IQ 频谱缓存。
+
+    设计目的：
+    - 13 个大 `.bin` 文件不应在每次更新时全量重读、全量 FFT；
+    - 按文件名维持缓存，只有签名变化的文件才重算；
+    - 与 `run_union_realtime.py` 组合使用时，可将“语义变化 / 单文件 IQ 变化”的更新压到 <1s。
+    """
+
+    entries_by_name: Dict[str, IQSpectrumCacheEntry] = field(default_factory=dict)
+    disk_cache_dir: Path = field(default_factory=lambda: ROOT / "output" / "iq_segment_cache")
 
 
 def _estimate_noise_floor_db(
@@ -238,16 +299,37 @@ def _pick_semantic_file(semantic_path: Optional[Path]) -> Path:
 
     优先级：
     1) 调用方显式传入的 semantic_path；
-    2) data_semantic/semantic.txt；
-    3) data_semantic/semantic.json。
+    2) data_semantic/ 下最新的时间戳语义文件（semantic_YYYY-MM-DD_HH-MM-SS.*）；
+    3) data_semantic/semantic.txt；
+    4) data_semantic/semantic.json。
     """
 
     if semantic_path is not None:
         return semantic_path
 
+    semantic_dir = ROOT / "data_semantic"
+    timestamped: list[Tuple[datetime, Path]] = []
+    if semantic_dir.exists():
+        for path in semantic_dir.iterdir():
+            if not path.is_file():
+                continue
+            match = SEMANTIC_TIMESTAMPED_NAME_RE.match(path.name)
+            if match is None:
+                continue
+            timestamped.append(
+                (
+                    datetime.strptime(match.group("ts"), "%Y-%m-%d_%H-%M-%S"),
+                    path,
+                )
+            )
+
+    if timestamped:
+        timestamped.sort(key=lambda item: (item[0], item[1].name))
+        return timestamped[-1][1]
+
     candidates = [
-        ROOT / "data_semantic" / "semantic.txt",
-        ROOT / "data_semantic" / "semantic.json",
+        semantic_dir / "semantic.txt",
+        semantic_dir / "semantic.json",
     ]
     for p in candidates:
         if p.exists():
@@ -279,7 +361,7 @@ def _semantic_txt_has_num_bins(path: Path) -> bool:
     return False
 
 
-def _load_semantic_params_with_txt_default(path: Path):
+def _load_semantic_params_with_txt_default(path: Path, *, verbose: bool = True):
     """加载语义参数，并处理 TXT 缺省 num_bins 的歧义。
 
     背景：
@@ -293,15 +375,16 @@ def _load_semantic_params_with_txt_default(path: Path):
     """
     # 语义输入可能来自“未经处理的上游接口输出”，常见问题：
     # - jammer_regions 无序；
-    # - jammer_regions 可重叠（需要后处理叠加）。
+    # - jammer_regions 可重叠（加载阶段先放行，后续仍按 decode_v2 的覆盖语义解释）。
     # 因此这里使用 strict=False 宽松加载，避免在文件加载阶段直接失败。
     params_v2 = load_semantic_v2_file(path, strict=False)
 
     if path.suffix.lower() == ".txt" and not _semantic_txt_has_num_bins(path):
-        print(
-            "  警告 semantic.txt 未显式指定 num_bins，将按 1 MHz (num_bins=2471) 解释 start_bin/end_bin；"
-            "如需 0.1 MHz，请在文件中写 num_bins=24701。"
-        )
+        if verbose:
+            print(
+                "  警告 semantic.txt 未显式指定 num_bins，将按 1 MHz (num_bins=2471) 解释 start_bin/end_bin；"
+                "如需 0.1 MHz，请在文件中写 num_bins=24701。"
+            )
         params_v2.num_bins = 2471
 
     return params_v2
@@ -313,12 +396,12 @@ def _semantic_power_on_axis(
     *,
     override_noise_floor_db: Optional[float] = None,
 ) -> np.ndarray:
-    """将语义 jammer_regions 映射到指定频率轴上（总功率，dB/dBm）。
+    """将语义 jammer_regions 映射到指定频率轴上（绝对功率，dB/dBm）。
 
-    语义约定：
-    - `jnr_db` 表示 JNR（dB），即 J/N；
-    - 当多个区域重叠时，应在**线性域**叠加干扰比值：sum(J/N)；
-    - 总功率：T = N * (1 + sum(J/N))，再转换到 dB/dBm。
+    语义口径与 `decode_semantic_v2()` 保持一致：
+    - 先以 `noise_floor_db` 作为底噪初始化整条谱线；
+    - 对每个 jammer_region，将覆盖到的输出区间直接设置为 `noise_floor_db + jnr_db`；
+    - 不再把 `jnr_db` 解释为 `J/N`，也不做线性域叠加。
     """
     noise_floor_db = (
         float(override_noise_floor_db)
@@ -336,9 +419,6 @@ def _semantic_power_on_axis(
     df_in_mhz = (float(params_v2.freq_max_mhz) - float(params_v2.freq_min_mhz)) / (
         float(params_v2.num_bins) - 1.0
     )
-
-    # diff 前缀和：累计 sum(J/N)
-    diff = np.zeros(freq_axis_mhz.size + 1, dtype=float)
 
     for region in params_v2.jammer_regions:
         start_bin = int(region.start_bin)
@@ -362,39 +442,28 @@ def _semantic_power_on_axis(
         if i0 > i1:
             continue
 
-        ratio = 10.0 ** (float(region.jnr_db) / 10.0)
-        diff[i0] += ratio
-        diff[i1 + 1] -= ratio
-
-    sum_ratio = np.cumsum(diff[:-1])
-    # 数值兜底：理论上不会为负，但浮点误差下可能出现极小负数
-    sum_ratio = np.maximum(sum_ratio, 0.0)
-
-    # T = N * (1 + sum(J/N))
-    out = float(noise_floor_db) + 10.0 * np.log10(1.0 + sum_ratio)
+        out[i0 : i1 + 1] = float(noise_floor_db) + float(region.jnr_db)
     return out
 
 
-def _total_power_dbm_to_jnr_db(
+def _power_dbm_to_semantic_jnr_db(
     power_dbm: np.ndarray,
     *,
     noise_floor_dbm: float,
     floor_db: float = JNR_FLOOR_DB,
 ) -> np.ndarray:
-    """将总功率（dBm）转换为 JNR（dB，J/N）。
+    """将绝对功率转换为与 `decode_semantic_v2()` 一致的 `jnr_db` 口径。
 
-    公式：
-    - T = N + J
-    - JNR = J/N = (T/N) - 1
+    这里的 `jnr_db` 表示“高于底噪多少 dB”，不是 `J/N` 的线性域换算结果。
+    对于不高于底噪的点，继续输出 `floor_db` 作为“无干扰”哨兵值。
     """
     if power_dbm.size == 0:
         return power_dbm.astype(float)
 
-    ratio_total = 10.0 ** ((power_dbm.astype(float, copy=False) - float(noise_floor_dbm)) / 10.0)
-    jnr_lin = ratio_total - 1.0
+    delta_db = power_dbm.astype(float, copy=False) - float(noise_floor_dbm)
     out = np.full_like(power_dbm, float(floor_db), dtype=float)
-    mask = jnr_lin > 0.0
-    out[mask] = 10.0 * np.log10(jnr_lin[mask])
+    mask = delta_db > 0.0
+    out[mask] = delta_db[mask]
     return out
 
 
@@ -432,6 +501,305 @@ def _resample_to_df_mhz(
     return f_new, p_new
 
 
+def _make_output_axis() -> Tuple[np.ndarray, float]:
+    """构造工程约定的 1 MHz 输出频轴。"""
+    output_num_bins = int(
+        round((DEFAULT_SEMANTIC_FREQ_MAX_MHZ - DEFAULT_SEMANTIC_FREQ_MIN_MHZ) / DEFAULT_OUTPUT_DF_MHZ)
+    ) + 1
+    freq_out = np.linspace(
+        DEFAULT_SEMANTIC_FREQ_MIN_MHZ,
+        DEFAULT_SEMANTIC_FREQ_MAX_MHZ,
+        output_num_bins,
+    )
+    df_out_mhz = (
+        (DEFAULT_SEMANTIC_FREQ_MAX_MHZ - DEFAULT_SEMANTIC_FREQ_MIN_MHZ) / (output_num_bins - 1)
+        if output_num_bins >= 2
+        else float("nan")
+    )
+    return freq_out, float(df_out_mhz)
+
+
+def _make_empty_stitched_spectrum(
+    *,
+    mode: StitchMode,
+    reason: str,
+) -> StitchedSpectrum:
+    return StitchedSpectrum(
+        freq_mhz=np.array([]),
+        power_db=np.array([]),
+        coverage_map=np.array([]),
+        segment_count=0,
+        freq_min_mhz=0.0,
+        freq_max_mhz=0.0,
+        mode=mode,
+        metadata={"empty": True, "reason": reason},
+    )
+
+
+def _iq_file_signature(path: Path) -> Tuple[str, int, int]:
+    stat = path.stat()
+    return (path.name, int(stat.st_size), int(stat.st_mtime_ns))
+
+
+def _iq_disk_cache_path(
+    *,
+    cache_dir: Path,
+    source_path: Path,
+    segment_fft_size: int,
+    time_agg_mode: str,
+) -> Path:
+    source_key = str(source_path.resolve()).encode("utf-8", errors="replace")
+    digest = hashlib.sha1(source_key).hexdigest()[:16]
+    filename = f"{source_path.stem}.segfft{int(segment_fft_size)}.{time_agg_mode}.{digest}.npz"
+    return cache_dir / filename
+
+
+def _load_segment_from_disk_cache(
+    *,
+    cache_dir: Path,
+    source_path: Path,
+    signature: Tuple[str, int, int],
+    segment_fft_size: int,
+    time_agg_mode: str,
+) -> Optional[SpectrumSegment]:
+    cache_path = _iq_disk_cache_path(
+        cache_dir=cache_dir,
+        source_path=source_path,
+        segment_fft_size=int(segment_fft_size),
+        time_agg_mode=str(time_agg_mode),
+    )
+    if not cache_path.exists():
+        return None
+
+    try:
+        with np.load(cache_path, allow_pickle=False) as data:
+            cached_name = str(data["source_name"].item())
+            cached_size = int(data["source_size"].item())
+            cached_mtime_ns = int(data["source_mtime_ns"].item())
+            cached_nfft = int(data["segment_fft_size"].item())
+            cached_agg = str(data["time_agg_mode"].item())
+            if (
+                cached_name != signature[0]
+                or cached_size != int(signature[1])
+                or cached_mtime_ns != int(signature[2])
+                or cached_nfft != int(segment_fft_size)
+                or cached_agg != str(time_agg_mode)
+            ):
+                return None
+
+            return SpectrumSegment(
+                freq_mhz=np.array(data["freq_mhz"], copy=True),
+                power_db=np.array(data["power_db"], copy=True),
+                center_freq_mhz=float(data["center_freq_mhz"].item()),
+                bandwidth_mhz=float(data["bandwidth_mhz"].item()),
+                metadata={
+                    "source_bin_name": cached_name,
+                    "cache_source": "disk",
+                },
+            )
+    except Exception:
+        return None
+
+
+def _save_segment_to_disk_cache(
+    *,
+    cache_dir: Path,
+    source_path: Path,
+    signature: Tuple[str, int, int],
+    segment_fft_size: int,
+    time_agg_mode: str,
+    segment: SpectrumSegment,
+) -> None:
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_path = _iq_disk_cache_path(
+        cache_dir=cache_dir,
+        source_path=source_path,
+        segment_fft_size=int(segment_fft_size),
+        time_agg_mode=str(time_agg_mode),
+    )
+    tmp_path = cache_path.with_suffix(cache_path.suffix + ".tmp")
+    with tmp_path.open("wb") as handle:
+        np.savez(
+            handle,
+            source_name=np.array(signature[0]),
+            source_size=np.array(int(signature[1]), dtype=np.int64),
+            source_mtime_ns=np.array(int(signature[2]), dtype=np.int64),
+            segment_fft_size=np.array(int(segment_fft_size), dtype=np.int64),
+            time_agg_mode=np.array(str(time_agg_mode)),
+            center_freq_mhz=np.array(float(segment.center_freq_mhz), dtype=np.float64),
+            bandwidth_mhz=np.array(float(segment.bandwidth_mhz), dtype=np.float64),
+            freq_mhz=np.asarray(segment.freq_mhz, dtype=np.float64),
+            power_db=np.asarray(segment.power_db, dtype=np.float64),
+        )
+    tmp_path.replace(cache_path)
+
+
+def _compute_iq_spectrum_segment(
+    path: Path,
+    *,
+    fft_size: int,
+    window: str,
+    time_agg_mode: str,
+    segment_fft_size: int,
+    default_sample_rate_hz: float,
+) -> SpectrumSegment:
+    sr_override: Optional[float] = None
+    meta_guess = parse_bin_filename(path.name, strict=False)
+    if "bandwidth_mhz" not in meta_guess:
+        sr_override = float(default_sample_rate_hz)
+
+    iq = load_iq_file(
+        path,
+        bin_dtype=BinDataType.INT16,
+        sample_rate_hz=sr_override,
+    )
+    cfg = SamplingConfig(
+        sample_rate_hz=iq.sample_rate_hz,
+        center_freq_hz=iq.center_freq_hz,
+        fft_size=fft_size,
+    )
+
+    if int(segment_fft_size) > 0:
+        target_df_hz = float(iq.sample_rate_hz) / float(segment_fft_size)
+        freq_mhz, power_db = compute_segmented_power_spectrum(
+            iq,
+            cfg,
+            target_df_hz=target_df_hz,
+            window=window,
+            time_agg_mode=time_agg_mode,
+        )
+    else:
+        freq_mhz, power_db = compute_power_spectrum(iq, cfg, window=window)
+
+    return SpectrumSegment(
+        freq_mhz=freq_mhz,
+        power_db=power_db,
+        center_freq_mhz=iq.center_freq_hz / 1e6,
+        bandwidth_mhz=iq.sample_rate_hz / 1e6,
+        metadata=iq.meta,
+    )
+
+
+def _run_task2_stitch_cached(
+    input_dir: Path,
+    *,
+    iq_cache: IQSpectrumCache,
+    fft_size: int = 262_144,
+    mode: StitchMode = StitchMode.MAX,
+    window: str = "hann",
+    fill_value: float = -180.0,
+    time_agg_mode: str = "mean",
+    segment_fft_size: int = 512,
+    default_sample_rate_hz: float = 204.8e6,
+    quiet: bool = False,
+) -> StitchedSpectrum:
+    """运行任务二（缓存版）。
+
+    说明：
+    - 按文件名维护缓存，只在文件签名变化时重算该文件的频谱；
+    - 对当前目录仍存在的所有 `.bin` 做一次轻量扫描，然后复用/重算；
+    - 最终仍走原有 `stitch_segments()`，保证输出格式与拼接行为不变。
+    """
+    try:
+        task2_t0 = time.perf_counter()
+        scan_t0 = time.perf_counter()
+        files = sorted(input_dir.glob("*.bin"))
+        scan_ms = (time.perf_counter() - scan_t0) * 1000.0
+        if not files:
+            raise FileNotFoundError(f"目录 {input_dir} 中未找到匹配 *.bin 的文件")
+
+        current_names = {path.name for path in files}
+        stale_names = [name for name in iq_cache.entries_by_name if name not in current_names]
+        for name in stale_names:
+            iq_cache.entries_by_name.pop(name, None)
+
+        segments: list[SpectrumSegment] = []
+        memory_cache_hits = 0
+        disk_cache_hits = 0
+        cache_misses = 0
+        disk_load_ms = 0.0
+        miss_compute_ms = 0.0
+        miss_disk_save_ms = 0.0
+
+        for path in files:
+            signature = _iq_file_signature(path)
+            entry = iq_cache.entries_by_name.get(path.name)
+            if (
+                entry is not None
+                and entry.signature == signature
+                and entry.segment_fft_size == int(segment_fft_size)
+                and entry.time_agg_mode == str(time_agg_mode)
+            ):
+                segment = entry.segment
+                memory_cache_hits += 1
+            else:
+                disk_load_t0 = time.perf_counter()
+                segment = _load_segment_from_disk_cache(
+                    cache_dir=iq_cache.disk_cache_dir,
+                    source_path=path,
+                    signature=signature,
+                    segment_fft_size=int(segment_fft_size),
+                    time_agg_mode=str(time_agg_mode),
+                )
+                disk_load_ms += (time.perf_counter() - disk_load_t0) * 1000.0
+                if segment is not None:
+                    disk_cache_hits += 1
+                else:
+                    compute_t0 = time.perf_counter()
+                    segment = _compute_iq_spectrum_segment(
+                        path,
+                        fft_size=fft_size,
+                        window=window,
+                        time_agg_mode=time_agg_mode,
+                        segment_fft_size=int(segment_fft_size),
+                        default_sample_rate_hz=float(default_sample_rate_hz),
+                    )
+                    miss_compute_ms += (time.perf_counter() - compute_t0) * 1000.0
+                    save_t0 = time.perf_counter()
+                    _save_segment_to_disk_cache(
+                        cache_dir=iq_cache.disk_cache_dir,
+                        source_path=path,
+                        signature=signature,
+                        segment_fft_size=int(segment_fft_size),
+                        time_agg_mode=str(time_agg_mode),
+                        segment=segment,
+                    )
+                    miss_disk_save_ms += (time.perf_counter() - save_t0) * 1000.0
+                    cache_misses += 1
+                iq_cache.entries_by_name[path.name] = IQSpectrumCacheEntry(
+                    signature=signature,
+                    segment_fft_size=int(segment_fft_size),
+                    time_agg_mode=str(time_agg_mode),
+                    segment=segment,
+                )
+            segments.append(segment)
+
+        if not segments:
+            return _make_empty_stitched_spectrum(mode=mode, reason="未生成任何有效 IQ 分段")
+
+        segments.sort(key=lambda seg: seg.center_freq_mhz)
+        stitch_t0 = time.perf_counter()
+        stitched = stitch_segments(segments, mode=mode, fill_value=fill_value)
+        stitch_ms = (time.perf_counter() - stitch_t0) * 1000.0
+        task2_total_ms = (time.perf_counter() - task2_t0) * 1000.0
+        stitched.metadata["cache_hits"] = int(memory_cache_hits + disk_cache_hits)
+        stitched.metadata["memory_cache_hits"] = int(memory_cache_hits)
+        stitched.metadata["disk_cache_hits"] = int(disk_cache_hits)
+        stitched.metadata["cache_misses"] = int(cache_misses)
+        stitched.metadata["task2_scan_ms"] = float(scan_ms)
+        stitched.metadata["task2_disk_load_ms"] = float(disk_load_ms)
+        stitched.metadata["task2_miss_compute_ms"] = float(miss_compute_ms)
+        stitched.metadata["task2_miss_disk_save_ms"] = float(miss_disk_save_ms)
+        stitched.metadata["task2_stitch_ms"] = float(stitch_ms)
+        stitched.metadata["task2_total_ms"] = float(task2_total_ms)
+        return stitched
+    except (FileNotFoundError, ValueError) as e:
+        if not quiet:
+            print(f"  警告 任务二跳过：{e}")
+            print("  将在并集阶段使用全底噪参考谱")
+        return _make_empty_stitched_spectrum(mode=mode, reason=str(e))
+
+
 def _run_task2_stitch(
     input_dir: Path,
     fft_size: int = 262_144,
@@ -442,6 +810,7 @@ def _run_task2_stitch(
     segment_fft_size: int = 512,
     default_sample_rate_hz: float = 204.8e6,
     target_df_hz: Optional[float] = None,
+    quiet: bool = False,
 ):
     """运行任务二：从 .bin 目录拼接宽带频谱。
 
@@ -452,6 +821,7 @@ def _run_task2_stitch(
     """
 
     try:
+        task2_t0 = time.perf_counter()
         if int(segment_fft_size) > 0:
             stitched, segments = stitch_from_bin_directory(
                 directory=input_dir,
@@ -464,6 +834,7 @@ def _run_task2_stitch(
                 segment_fft_size=int(segment_fft_size),
                 time_agg_mode=time_agg_mode,
                 default_sample_rate_hz=float(default_sample_rate_hz),
+                quiet=quiet,
             )
         elif target_df_hz is not None:
             stitched, segments = stitch_from_bin_directory(
@@ -477,6 +848,7 @@ def _run_task2_stitch(
                 target_df_hz=target_df_hz,
                 time_agg_mode=time_agg_mode,
                 default_sample_rate_hz=float(default_sample_rate_hz),
+                quiet=quiet,
             )
         else:
             stitched, segments = stitch_from_bin_directory(
@@ -488,29 +860,22 @@ def _run_task2_stitch(
                 window=window,
                 fill_value=fill_value,
                 default_sample_rate_hz=float(default_sample_rate_hz),
+                quiet=quiet,
             )
         if stitched.freq_mhz.size == 0:
-            print(
-                "  警告 任务二拼接结果为空，data_segment 目录可能没有有效 .bin 文件，"
-                "将在并集阶段使用全底噪参考谱"
-            )
+            if not quiet:
+                print(
+                    "  警告 任务二拼接结果为空，data_segment 目录可能没有有效 .bin 文件，"
+                    "将在并集阶段使用全底噪参考谱"
+                )
+        stitched.metadata["task2_total_ms"] = float((time.perf_counter() - task2_t0) * 1000.0)
         return stitched
     except (FileNotFoundError, ValueError) as e:
         # data_segment 目录为空或没有有效 .bin 文件
-        print(f"  警告 任务二跳过：{e}")
-        print("  将在并集阶段使用全底噪参考谱")
-        # 返回空频谱对象
-        from electromagnetic_state.signal.stitcher import StitchedSpectrum
-        return StitchedSpectrum(
-            freq_mhz=np.array([]),
-            power_db=np.array([]),
-            coverage_map=np.array([]),
-            segment_count=0,
-            freq_min_mhz=0.0,
-            freq_max_mhz=0.0,
-            mode=mode,
-            metadata={"empty": True, "reason": str(e)}
-        )
+        if not quiet:
+            print(f"  警告 任务二跳过：{e}")
+            print("  将在并集阶段使用全底噪参考谱")
+        return _make_empty_stitched_spectrum(mode=mode, reason=str(e))
 
 
 def _run_task3_decode(
@@ -536,6 +901,148 @@ def _run_task3_decode(
     )
     noise_floor_db = float(params_v2.noise_floor_db)
     return freq_mhz, power_db, noise_floor_db
+
+
+def compute_union_snapshot(
+    *,
+    semantic_path: Optional[Path] = None,
+    iq_dir: Optional[Path] = None,
+    iq_cache: Optional[IQSpectrumCache] = None,
+    segment_fft_size: int = 512,
+    time_agg_mode: str = "mean",
+    noise_floor_dbm_1mhz: float = DEFAULT_NOISE_FLOOR_DBM_1MHZ,
+    allow_missing_semantic: bool = False,
+    verbose: bool = True,
+) -> UnionSpectrumSnapshot:
+    """计算当前可显示的 IQ/语义/并集频谱快照。
+
+    设计目的：
+    - 保持 `main()` 的一次性离线接口不变；
+    - 给实时绘图场景提供一个“只算数据、不保存 PNG”的复用入口；
+    - 允许调用方选择“语义缺失是否视为错误”。
+    """
+
+    snapshot_t0 = time.perf_counter()
+    task2_input_dir = Path(iq_dir) if iq_dir is not None else ROOT / "data_segment"
+    freq_out, df_out_mhz = _make_output_axis()
+    target_noise_floor_dbm = float(noise_floor_dbm_1mhz)
+
+    task2_t0 = time.perf_counter()
+    if iq_cache is None:
+        stitched = _run_task2_stitch(
+            task2_input_dir,
+            segment_fft_size=int(segment_fft_size),
+            time_agg_mode=str(time_agg_mode),
+            quiet=not verbose,
+        )
+    else:
+        stitched = _run_task2_stitch_cached(
+            task2_input_dir,
+            iq_cache=iq_cache,
+            segment_fft_size=int(segment_fft_size),
+            time_agg_mode=str(time_agg_mode),
+            quiet=not verbose,
+        )
+    task2_outer_ms = (time.perf_counter() - task2_t0) * 1000.0
+    has_iq = stitched.freq_mhz.size > 0
+
+    semantic_resolve_t0 = time.perf_counter()
+    resolved_semantic_path: Optional[Path] = None
+    if semantic_path is not None:
+        resolved_semantic_path = Path(semantic_path)
+    elif not allow_missing_semantic:
+        resolved_semantic_path = _pick_semantic_file(None)
+    else:
+        for candidate in (
+            ROOT / "data_semantic" / "semantic.txt",
+            ROOT / "data_semantic" / "semantic.json",
+        ):
+            if candidate.exists():
+                resolved_semantic_path = candidate
+                break
+    semantic_resolve_ms = (time.perf_counter() - semantic_resolve_t0) * 1000.0
+
+    params_v2 = None
+    semantic_noise_floor_db: Optional[float] = None
+    semantic_input_df_mhz = float("nan")
+    has_semantic = False
+    power_sem_on_out_dbm = np.full_like(freq_out, target_noise_floor_dbm, dtype=float)
+
+    semantic_stage_t0 = time.perf_counter()
+    if resolved_semantic_path is not None:
+        if not resolved_semantic_path.exists():
+            if not allow_missing_semantic:
+                raise FileNotFoundError(f"语义文件不存在: {resolved_semantic_path}")
+        else:
+            params_v2 = _load_semantic_params_with_txt_default(
+                resolved_semantic_path,
+                verbose=verbose,
+            )
+            semantic_noise_floor_db = float(params_v2.noise_floor_db)
+            semantic_input_df_mhz = (
+                (float(params_v2.freq_max_mhz) - float(params_v2.freq_min_mhz)) / float(params_v2.num_bins - 1)
+                if params_v2.num_bins >= 2
+                else float("nan")
+            )
+            power_sem_on_out_dbm = _semantic_power_on_axis(
+                params_v2,
+                freq_out,
+                override_noise_floor_db=target_noise_floor_dbm,
+            )
+            has_semantic = True
+    semantic_stage_ms = (time.perf_counter() - semantic_stage_t0) * 1000.0
+
+    aggregate_stage_t0 = time.perf_counter()
+    if not has_iq:
+        power_ref_on_out_dbm = np.full_like(freq_out, target_noise_floor_dbm, dtype=float)
+    else:
+        valid_mask = stitched.coverage_map > 0 if stitched.coverage_map.size == stitched.power_db.size else None
+        noise_fill_db = _estimate_noise_floor_db(stitched.power_db, valid_mask=valid_mask)
+        power_ref_on_out_rel = _aggregate_reference_to_rbw_axis(
+            freq_ref_mhz=stitched.freq_mhz,
+            power_ref_db=stitched.power_db,
+            coverage_map=stitched.coverage_map,
+            freq_out_mhz=freq_out,
+            rbw_mhz=DEFAULT_OUTPUT_RBW_MHZ,
+            noise_fill_db=noise_fill_db,
+        )
+        noise_ref_out_db = _estimate_noise_floor_db(power_ref_on_out_rel)
+        cal_offset_db = target_noise_floor_dbm - float(noise_ref_out_db)
+        power_ref_on_out_dbm = power_ref_on_out_rel + float(cal_offset_db)
+    aggregate_stage_ms = (time.perf_counter() - aggregate_stage_t0) * 1000.0
+
+    union_stage_t0 = time.perf_counter()
+    union_power_dbm = np.maximum(power_ref_on_out_dbm, power_sem_on_out_dbm)
+    union_jnr_db = _power_dbm_to_semantic_jnr_db(
+        union_power_dbm,
+        noise_floor_dbm=target_noise_floor_dbm,
+    )
+    union_stage_ms = (time.perf_counter() - union_stage_t0) * 1000.0
+    snapshot_total_ms = (time.perf_counter() - snapshot_t0) * 1000.0
+
+    stitched.metadata["task2_outer_ms"] = float(task2_outer_ms)
+    stitched.metadata["semantic_resolve_ms"] = float(semantic_resolve_ms)
+    stitched.metadata["semantic_stage_ms"] = float(semantic_stage_ms)
+    stitched.metadata["aggregate_stage_ms"] = float(aggregate_stage_ms)
+    stitched.metadata["union_stage_ms"] = float(union_stage_ms)
+    stitched.metadata["snapshot_total_ms"] = float(snapshot_total_ms)
+
+    return UnionSpectrumSnapshot(
+        freq_mhz=freq_out,
+        power_db=union_power_dbm,
+        jnr_db=union_jnr_db,
+        power_iq_dbm=power_ref_on_out_dbm,
+        power_semantic_dbm=power_sem_on_out_dbm,
+        has_iq=has_iq,
+        has_semantic=has_semantic,
+        stitched=stitched,
+        semantic_path=resolved_semantic_path,
+        semantic_params=params_v2,
+        semantic_input_df_mhz=semantic_input_df_mhz,
+        semantic_noise_floor_db=semantic_noise_floor_db,
+        output_df_mhz=df_out_mhz,
+        target_noise_floor_dbm_1mhz=target_noise_floor_dbm,
+    )
 
 
 def _resample_reference_to_semantic_axis(
@@ -590,9 +1097,6 @@ def _run_union_impl(
     time_agg_mode: str,
     noise_floor_dbm_1mhz: float,
 ) -> int:
-    # 路径约定（可按需修改）
-    task2_input_dir = ROOT / "data_segment"
-    task3_semantic_path = _pick_semantic_file(semantic_path)
     output_dir = ROOT / "output"
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -600,12 +1104,16 @@ def _run_union_impl(
         print("=" * 80)
         print("运行任务二：拼接真实 .bin 频谱")
         print("=" * 80)
-        stitched = _run_task2_stitch(
-            task2_input_dir,
+        snapshot = compute_union_snapshot(
+            semantic_path=semantic_path,
             segment_fft_size=int(segment_fft_size),
             time_agg_mode=str(time_agg_mode),
+            noise_floor_dbm_1mhz=float(noise_floor_dbm_1mhz),
+            allow_missing_semantic=False,
+            verbose=True,
         )
-        if stitched.freq_mhz.size == 0:
+        stitched = snapshot.stitched
+        if not snapshot.has_iq:
             print(
                 "任务二未生成有效参考谱（data_segment 为空或拼接失败），"
                 "后续并集将仅使用语义谱，并将参考谱视为全频带底噪"
@@ -622,94 +1130,39 @@ def _run_union_impl(
         print("\n" + "=" * 80)
         print("运行任务三：语义参数恢复频谱")
         print("=" * 80)
-        print(f"语义文件: {task3_semantic_path}")
+        if snapshot.semantic_path is None or snapshot.semantic_params is None:
+            raise FileNotFoundError("未能解析有效语义文件")
 
-        params_v2 = _load_semantic_params_with_txt_default(task3_semantic_path)
-        semantic_noise_floor_db = float(params_v2.noise_floor_db)
-        target_noise_floor_dbm = float(noise_floor_dbm_1mhz)
-
-        df_in_mhz = (
-            (float(params_v2.freq_max_mhz) - float(params_v2.freq_min_mhz)) / float(params_v2.num_bins - 1)
-            if params_v2.num_bins >= 2
-            else float("nan")
-        )
+        print(f"语义文件: {snapshot.semantic_path}")
         print(
             "任务三完成："
-            f"输入频率范围 {float(params_v2.freq_min_mhz):.2f} - {float(params_v2.freq_max_mhz):.2f} MHz, "
-            f"点数 {int(params_v2.num_bins)}, 分辨率 {df_in_mhz:.6f} MHz, "
-            f"语义底噪字段 {semantic_noise_floor_db:.2f} dB"
+            f"输入频率范围 {float(snapshot.semantic_params.freq_min_mhz):.2f} - "
+            f"{float(snapshot.semantic_params.freq_max_mhz):.2f} MHz, "
+            f"点数 {int(snapshot.semantic_params.num_bins)}, "
+            f"分辨率 {snapshot.semantic_input_df_mhz:.6f} MHz, "
+            f"语义底噪字段 {float(snapshot.semantic_noise_floor_db):.2f} dB"
         )
-        print(f"输出绝对功率标定：底噪基准 {target_noise_floor_dbm:.2f} dBm @ 1MHz RBW")
-
-        # 输出保存频轴：按工程约定固定 1 MHz（2471 点），避免下游因分辨率变化导致维度漂移。
-        # 注意：这里的“输出分辨率”与“语义参数的 num_bins 解释分辨率”是两回事：
-        # - 语义参数用于解释 start_bin/end_bin 对应的频率区间（可能是 1 MHz 或 0.1 MHz）；
-        # - 但最终保存到 union_spectrum.npz 的输出频轴固定为 1 MHz。
-        output_df_mhz = DEFAULT_OUTPUT_DF_MHZ
-        output_num_bins = int(
-            round((DEFAULT_SEMANTIC_FREQ_MAX_MHZ - DEFAULT_SEMANTIC_FREQ_MIN_MHZ) / output_df_mhz)
-        ) + 1
-        freq_out = np.linspace(
-            DEFAULT_SEMANTIC_FREQ_MIN_MHZ,
-            DEFAULT_SEMANTIC_FREQ_MAX_MHZ,
-            output_num_bins,
-        )
-        df_out_mhz = (
-            (DEFAULT_SEMANTIC_FREQ_MAX_MHZ - DEFAULT_SEMANTIC_FREQ_MIN_MHZ) / (output_num_bins - 1)
-            if output_num_bins >= 2
-            else float("nan")
+        print(
+            "输出绝对功率标定："
+            f"底噪基准 {float(snapshot.target_noise_floor_dbm_1mhz):.2f} dBm @ 1MHz RBW"
         )
         print(
             "输出保存频轴："
             f"{DEFAULT_SEMANTIC_FREQ_MIN_MHZ:.2f} - {DEFAULT_SEMANTIC_FREQ_MAX_MHZ:.2f} MHz, "
-            f"点数 {output_num_bins}, 分辨率 {df_out_mhz:.6f} MHz"
-        )
-
-        # 将语义区域映射到输出频轴：输出单位为 dBm（以 target_noise_floor_dbm 为底噪）
-        power_sem_on_out_dbm = _semantic_power_on_axis(
-            params_v2,
-            freq_out,
-            override_noise_floor_db=target_noise_floor_dbm,
+            f"点数 {snapshot.freq_mhz.size}, 分辨率 {snapshot.output_df_mhz:.6f} MHz"
         )
 
         print("\n" + "=" * 80)
         print("对齐任务二/任务三频谱（并集，底噪以绝对基准为准）")
         print("=" * 80)
-        if stitched.freq_mhz.size == 0:
-            power_ref_on_out_dbm = np.full_like(freq_out, target_noise_floor_dbm, dtype=float)
-        else:
-            valid_mask = stitched.coverage_map > 0 if stitched.coverage_map.size == stitched.power_db.size else None
-            noise_fill_db = _estimate_noise_floor_db(stitched.power_db, valid_mask=valid_mask)
 
-            # 参考谱聚合到 1MHz RBW（相对 dB）
-            power_ref_on_out_rel = _aggregate_reference_to_rbw_axis(
-                freq_ref_mhz=stitched.freq_mhz,
-                power_ref_db=stitched.power_db,
-                coverage_map=stitched.coverage_map,
-                freq_out_mhz=freq_out,
-                rbw_mhz=DEFAULT_OUTPUT_RBW_MHZ,
-                noise_fill_db=noise_fill_db,
-            )
-
-            # 绝对刻度对齐：让参考谱噪声低分位 == target_noise_floor_dbm
-            noise_ref_out_db = _estimate_noise_floor_db(power_ref_on_out_rel)
-            cal_offset_db = target_noise_floor_dbm - float(noise_ref_out_db)
-            power_ref_on_out_dbm = power_ref_on_out_rel + float(cal_offset_db)
-
-        # 合并：同一频点取 max 即可（输出单位：dBm @ 1MHz RBW）
-        union_power_dbm = np.maximum(power_ref_on_out_dbm, power_sem_on_out_dbm)
-        union_jnr_db = _total_power_dbm_to_jnr_db(
-            union_power_dbm,
-            noise_floor_dbm=target_noise_floor_dbm,
-        )
-
-        # 保存 npz：默认保留 (freq_mhz, power_db)；同时输出 jnr_db 便于做“相对噪声”的指标计算。
+        # 保存 npz：默认保留 (freq_mhz, power_db)；同时输出与 decode_v2 一致口径的 jnr_db。
         union_npz_path = output_dir / "union_spectrum.npz"
         np.savez(
             union_npz_path,
-            freq_mhz=freq_out,
-            power_db=union_power_dbm,
-            jnr_db=union_jnr_db,
+            freq_mhz=snapshot.freq_mhz,
+            power_db=snapshot.power_db,
+            jnr_db=snapshot.jnr_db,
         )
         print(f"  ✓ 并集频谱数据已保存: {union_npz_path}")
 
@@ -720,15 +1173,23 @@ def _run_union_impl(
                 fig, ax = pyplot.subplots(figsize=(12, 5))
 
                 # 绘图分辨率调节：若指定 plot_df_mhz，则对 IQ 参考谱做重采样；语义谱按区域映射到绘图频轴
-                freq_plot = freq_out
-                ref_plot = power_ref_on_out_dbm
+                freq_plot = snapshot.freq_mhz
+                ref_plot = snapshot.power_iq_dbm
                 if plot_df_mhz is not None:
-                    freq_plot, ref_plot = _resample_to_df_mhz(freq_out, power_ref_on_out_dbm, float(plot_df_mhz))
+                    freq_plot, ref_plot = _resample_to_df_mhz(
+                        snapshot.freq_mhz,
+                        snapshot.power_iq_dbm,
+                        float(plot_df_mhz),
+                    )
 
-                sem_plot = _semantic_power_on_axis(
-                    params_v2,
-                    freq_plot,
-                    override_noise_floor_db=target_noise_floor_dbm,
+                sem_plot = (
+                    _semantic_power_on_axis(
+                        snapshot.semantic_params,
+                        freq_plot,
+                        override_noise_floor_db=snapshot.target_noise_floor_dbm_1mhz,
+                    )
+                    if snapshot.has_semantic and snapshot.semantic_params is not None
+                    else np.full_like(freq_plot, snapshot.target_noise_floor_dbm_1mhz, dtype=float)
                 )
                 union_plot = np.maximum(ref_plot, sem_plot)
 
@@ -848,4 +1309,4 @@ def main(
 
 
 if __name__ == "__main__":
-    sys.exit(main(quiet=False, enable_plot=False))
+    sys.exit(main(quiet=False, enable_plot=True))
