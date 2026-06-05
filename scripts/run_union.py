@@ -12,6 +12,8 @@
 
 输出单位说明（重要）：
 - 本脚本输出的 `power_db` 现在约定为 **dBm @ 1MHz RBW**；
+- 导出的 `freq_mhz` 不再表示“1MHz 频箱中心点”，而表示 **1MHz 区间左边界**；
+  例如 `freq_mhz=30` 对应功率区间 `[30, 31)` MHz；
 - 绝对刻度通过“噪声底噪对齐”的方式标定：将参考谱的噪声低分位对齐到 `noise_floor_dbm_1mhz`（默认 -105 dBm）。
   这能保证底噪基准正确，但严格的“绝对功率”仍依赖前端链路一致性与更完善的校准体系。
 - 导出的 `jnr_db` 与 `decode_semantic_v2()` 保持同一口径，表示“高于底噪多少 dB”，不再做 `J/N` 线性域换算。
@@ -49,7 +51,7 @@ import numpy as np
 # 绝对功率（dBm）基准：默认 -105 dBm @ 1MHz RBW
 DEFAULT_NOISE_FLOOR_DBM_1MHZ = -105.0
 
-# 输出频轴工程约定：1 MHz（2471 点）
+# 输出频轴工程约定：1 MHz；freq_mhz 表示每个 1MHz 区间的左边界标签
 DEFAULT_OUTPUT_DF_MHZ = 1.0
 DEFAULT_OUTPUT_RBW_MHZ = 1.0
 
@@ -176,11 +178,11 @@ def _aggregate_reference_to_rbw_axis(
     rbw_mhz: float,
     noise_fill_db: float,
 ) -> np.ndarray:
-    """将参考谱聚合到输出频轴，并近似为 rbw_mhz 的功率测量。
+    """将参考谱聚合到输出频轴，并近似为 rbw_mhz 的区间功率测量。
 
     设计取舍（工程化而非教科书）：
     - 输出轴为 1MHz 栅格；参考谱典型为 0.4MHz（Fs=204.8MHz, NFFT=512）；
-    - 为了更接近 “1MHz RBW” 的功率口径，这里对落入 [f-0.5, f+0.5] MHz 窗口内的参考功率做线性域求和；
+    - `freq_out_mhz[i]` 表示区间左边界，因此这里按 [f, f+rbw_mhz) 左闭右开窗口聚合；
     - 若该窗口内无有效覆盖点，则回退为 noise_fill_db（不做“多 bin 噪声叠加”）。
     """
     if rbw_mhz <= 0:
@@ -200,13 +202,12 @@ def _aggregate_reference_to_rbw_axis(
     p_ref_lin = 10.0 ** (p_ref_db / 10.0)
     noise_lin = 10.0 ** (float(noise_fill_db) / 10.0)
 
-    half = float(rbw_mhz) * 0.5
     out_lin = np.empty_like(freq_out_mhz, dtype=float)
     out_lin.fill(noise_lin)
 
     for i, f0 in enumerate(freq_out_mhz.astype(float, copy=False)):
-        left = int(np.searchsorted(f_ref, f0 - half, side="left"))
-        right = int(np.searchsorted(f_ref, f0 + half, side="right"))
+        left = int(np.searchsorted(f_ref, f0, side="left"))
+        right = int(np.searchsorted(f_ref, f0 + float(rbw_mhz), side="left"))
         if right <= left:
             out_lin[i] = noise_lin
             continue
@@ -400,6 +401,7 @@ def _semantic_power_on_axis(
 
     语义口径与 `decode_semantic_v2()` 保持一致：
     - 先以 `noise_floor_db` 作为底噪初始化整条谱线；
+    - `freq_axis_mhz` 的每个点表示区间左边界，因此按区间重叠关系做映射；
     - 对每个 jammer_region，将覆盖到的输出区间直接设置为 `noise_floor_db + jnr_db`；
     - 不再把 `jnr_db` 解释为 `J/N`，也不做线性域叠加。
     """
@@ -416,6 +418,13 @@ def _semantic_power_on_axis(
     if params_v2.num_bins < 2:
         return out
 
+    df_out_mhz = (
+        float(freq_axis_mhz[1] - freq_axis_mhz[0])
+        if freq_axis_mhz.size >= 2
+        else float(DEFAULT_OUTPUT_DF_MHZ)
+    )
+    out_first_start_mhz = float(freq_axis_mhz[0])
+    out_last_stop_mhz = float(freq_axis_mhz[-1]) + df_out_mhz
     df_in_mhz = (float(params_v2.freq_max_mhz) - float(params_v2.freq_min_mhz)) / (
         float(params_v2.num_bins) - 1.0
     )
@@ -428,21 +437,20 @@ def _semantic_power_on_axis(
 
         f0 = float(params_v2.freq_min_mhz) + float(start_bin) * df_in_mhz
         f1 = float(params_v2.freq_min_mhz) + float(end_bin) * df_in_mhz
-        f_start = min(f0, f1)
-        f_end = max(f0, f1)
-
-        # 映射到输出频轴，包含端点
-        i0 = int(np.searchsorted(freq_axis_mhz, f_start, side="left"))
-        i1 = int(np.searchsorted(freq_axis_mhz, f_end, side="right")) - 1
-
-        if i1 < 0 or i0 >= freq_axis_mhz.size:
+        region_start_mhz = min(f0, f1)
+        region_stop_mhz = max(f0, f1) + df_in_mhz
+        if region_stop_mhz <= out_first_start_mhz or region_start_mhz >= out_last_stop_mhz:
             continue
+
+        # 输出轴的每个标签表示 [f, f+df_out) 区间左边界；只要区间有重叠就视为命中。
+        i0 = int(np.searchsorted(freq_axis_mhz, region_start_mhz, side="right")) - 1
+        i1_excl = int(np.searchsorted(freq_axis_mhz, region_stop_mhz, side="left"))
         i0 = max(i0, 0)
-        i1 = min(i1, freq_axis_mhz.size - 1)
-        if i0 > i1:
+        i1_excl = min(i1_excl, freq_axis_mhz.size)
+        if i0 >= i1_excl:
             continue
 
-        out[i0 : i1 + 1] = float(noise_floor_db) + float(region.jnr_db)
+        out[i0:i1_excl] = float(noise_floor_db) + float(region.jnr_db)
     return out
 
 
@@ -502,7 +510,13 @@ def _resample_to_df_mhz(
 
 
 def _make_output_axis() -> Tuple[np.ndarray, float]:
-    """构造工程约定的 1 MHz 输出频轴。"""
+    """构造工程约定的 1 MHz 输出频轴。
+
+    注意：
+    - `freq_out[i]` 表示第 i 个 1MHz 区间的左边界；
+    - 例如 `freq_out[i] == 30` 表示 `[30, 31)` MHz；
+    - 最后一个标签的右边界隐含为 `freq_out[-1] + DEFAULT_OUTPUT_DF_MHZ`。
+    """
     output_num_bins = int(
         round((DEFAULT_SEMANTIC_FREQ_MAX_MHZ - DEFAULT_SEMANTIC_FREQ_MIN_MHZ) / DEFAULT_OUTPUT_DF_MHZ)
     ) + 1
@@ -1147,16 +1161,18 @@ def _run_union_impl(
             f"底噪基准 {float(snapshot.target_noise_floor_dbm_1mhz):.2f} dBm @ 1MHz RBW"
         )
         print(
-            "输出保存频轴："
+            "输出保存频轴（区间左边界）："
             f"{DEFAULT_SEMANTIC_FREQ_MIN_MHZ:.2f} - {DEFAULT_SEMANTIC_FREQ_MAX_MHZ:.2f} MHz, "
-            f"点数 {snapshot.freq_mhz.size}, 分辨率 {snapshot.output_df_mhz:.6f} MHz"
+            f"点数 {snapshot.freq_mhz.size}, 分辨率 {snapshot.output_df_mhz:.6f} MHz, "
+            f"例如 30 MHz 表示 [30, 31) MHz"
         )
 
         print("\n" + "=" * 80)
         print("对齐任务二/任务三频谱（并集，底噪以绝对基准为准）")
         print("=" * 80)
 
-        # 保存 npz：默认保留 (freq_mhz, power_db)；同时输出与 decode_v2 一致口径的 jnr_db。
+        # 保存 npz：默认保留 (freq_mhz, power_db)；其中 freq_mhz 表示 1MHz 区间左边界。
+        # 同时输出与 decode_v2 一致口径的 jnr_db。
         union_npz_path = output_dir / "union_spectrum.npz"
         np.savez(
             union_npz_path,
@@ -1214,9 +1230,9 @@ def _run_union_impl(
                     alpha=0.9,
                     color="#ff7f0e",
                 )
-                ax.set_xlabel("Frequency (MHz)")
+                ax.set_xlabel("Frequency Interval Start (MHz)")
                 ax.set_ylabel("Power (dBm @ 1MHz RBW)")
-                title = "任务二/任务三 频谱并集（dBm@1MHz，按频点取max，颜色区分来源）"
+                title = "任务二/任务三 频谱并集（dBm@1MHz，按 1MHz 左闭右开区间取 max）"
                 if plot_df_mhz is not None:
                     title += f"  [plot_df={float(plot_df_mhz):.6f} MHz]"
                 ax.set_title(title)
