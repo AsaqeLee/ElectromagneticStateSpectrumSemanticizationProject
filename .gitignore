@@ -1,6 +1,6 @@
 .spec-workflow
 .serena
-.snow
+.codegraph
 data*
 docs/exp
 docs/python
@@ -34,3 +34,8 @@ test_data/
 # 文档草稿/脚本说明（当前按“只保留代码”处理）
 docs/*.md
 scripts/*README*.md
+
+#归档
+archive
+# 汇报材料
+elecdocs/

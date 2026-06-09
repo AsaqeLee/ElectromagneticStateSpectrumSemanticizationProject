@@ -1,4 +1,4 @@
-# 电磁态频谱语义化工程
+# 电磁态频谱绘制
 
 > **Electromagnetic State Spectrum Semanticization Project**  
 > 电磁频谱智能分析与语义化编码系统
