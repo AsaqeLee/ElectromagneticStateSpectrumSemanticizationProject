@@ -6,7 +6,6 @@
 - 支持真实IQ数据处理
 """
 
-from . import stitch_multi
 from . import stitch_real_data
 
-__all__ = ['stitch_multi', 'stitch_real_data']
+__all__ = ['stitch_real_data']
