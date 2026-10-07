@@ -1,123 +1,84 @@
-# 电磁态频谱绘制
+# Electromagnetic State Spectrum Semanticization
 
-> **Electromagnetic State Spectrum Semanticization Project**  
-> 电磁频谱智能分析与语义化编码系统
+Python toolkit for electromagnetic spectrum analysis over roughly **30–2500 MHz**: jammer power-spectrum composition, segmented spectrum stitching, and semantic encoding / recovery for sensing workflows.
 
-[![Python Version](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-34%20passed-brightgreen.svg)](tests/)
-[![Architecture](https://img.shields.io/badge/architecture-4%20layers-orange.svg)](#项目架构)
+## Overview
 
-本项目实现《频谱语义化表征及频谱恢复》的完整工程体系，面向 **30–2500 MHz** 频段，提供从信号合成、频谱拼接到语义编码的端到端解决方案。
+The project implements an engineering stack around spectrum semantic representation and recovery. It is organized as a layered package under `src/electromagnetic_state/` with CLI scripts for interactive and batch use.
 
-## 🎯 核心能力
+## Features / scope
 
-### 1. 干扰信号功率谱合成
+### 1. Jammer power-spectrum composition
 
-- **频率范围**: 30–2500 MHz（可配置）
-- **频率分辨率**: 1.0 MHz（2471 个频点）
-- **干扰类型**: 6 种（噪声调频、单音、多音、梳状谱、部分带宽噪声、扫频）
-- **输出格式**: NPZ 功率谱文件 + PNG 可视化
+- Configurable frequency range (default 30–2500 MHz)
+- Default 1.0 MHz resolution (2471 bins at the default span)
+- Six jammer types: noise FM, single-tone, multi-tone, comb, partial-band noise, sweep
+- Outputs: NPZ power spectra and optional PNG plots
 
-### 2. 频谱分段拼接
+### 2. Segmented spectrum stitching
 
-- **拼接窗口**: 13 个 200 MHz 窗口（±100 MHz 半带宽）
-- **窗口中心**: 130, 330, 400, 600, 800, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2400 MHz
-- **拼接模式**: MAX（最大值）/ MEAN（平均值）/ FIRST（优先第一分段）
-- **数据来源**: IQ `.bin` 文件（int16/float32）、NPZ 频谱文件
+- Thirteen 200 MHz windows (±100 MHz half-bandwidth)
+- Window centers: 130, 330, 400, 600, 800, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2400 MHz
+- Modes: MAX / MEAN / FIRST
+- Inputs: IQ `.bin` (int16/float32) or NPZ spectra
 
-### 3. 语义参数频谱恢复
+### 3. Semantic parameter recovery
 
-- **v1 格式**: `SemanticParams` - 单区域/多区域自动识别
-- **v2 格式**: `SemanticEncodingV2` - 标准化多干扰区域编码
-- **恢复精度**: 典型误差 < 3 dB（区域内）
-- **应用场景**: 频谱压缩、传输、存储、对抗推演
+- v1: `SemanticParams` (single- or multi-region)
+- v2: `SemanticEncodingV2` (standardized multi-region encoding)
+- Documented typical in-band recovery error on the order of a few dB; validate on your data before citing figures
 
-## 🏗️ 项目架构
+## Architecture
 
-采用 **4 层模块化架构**，清晰分离核心逻辑、算法实现、业务流程和用户接口：
+Four layers with one-way dependencies (CLI → pipeline → algorithms/IO → core types):
 
-```
-📦 electromagneticState/
-├── 📂 src/                         # 源码目录
-│   └── 📁 electromagnetic_state/   # 唯一顶层包
-│       ├── 📁 core/                # Layer 0: 核心数据结构与配置
-│       ├── 📁 io/                  # Layer 1: 数据输入输出
-│       ├── 📁 signal/              # Layer 1: 信号处理算法
-│       ├── 📁 semantics/           # Layer 1: 语义编码与解码
-│       ├── 📁 pipeline/            # Layer 2: 业务流程编排
-│       ├── 📁 visualization/       # 可视化工具
-│       └── 📁 viz/                 # 轻量绘图工具
-├── 📂 scripts/                     # Layer 3: 命令行工具
-├── 📂 tests/                       # 单元测试与集成测试
-├── 📂 docs/                        # 活跃技术文档
-├── 📂 archive/                     # 过时文档归档
-├── 📂 data/                        # 数据输出目录
-├── 📂 data_semantic/               # 语义参数配置
-├── 📂 evidence/                    # 改进建议与评审记录
-├── README.md                       # 项目说明
-└── pyproject.toml                  # Python 项目配置
+```text
+src/electromagnetic_state/
+├── core/            # Layer 0: data structures and config
+├── io/              # Layer 1: readers/writers
+├── signal/          # Layer 1: signal / spectrum algorithms
+├── semantics/       # Layer 1: encode / decode
+├── pipeline/        # Layer 2: workflows
+├── visualization/   # plotting helpers
+└── viz/             # lightweight plot utilities
+scripts/             # Layer 3: CLI entry points
+tests/
+docs/
 ```
 
-### 架构设计理念
+## Requirements
 
-- **Layer 0 (Core)**: 数据结构与常量，无业务逻辑
-- **Layer 1 (Processing)**: 可复用的算法模块，单一职责
-- **Layer 2 (Pipeline)**: 组合 Layer 1 完成业务流程
-- **Layer 3 (CLI)**: 用户接口，调用 Pipeline 提供服务
+- Python 3.11+
+- Dependencies in `requirements.txt` (NumPy stack and project packages)
+- Optional: `requirements-dev.txt` for lint/test tooling
 
-**依赖方向**: `Layer 3 → Layer 2 → Layer 1 → Layer 0`（严格单向）
-
----
-
-## ⚡ 快速开始
-
-### 1. 环境准备
+## Getting started
 
 ```bash
-# 推荐使用 conda 管理环境
 conda create -n electromagnetic-state python=3.11
 conda activate electromagnetic-state
-
-# 安装依赖
 pip install -r requirements.txt
-
-# （可选）安装开发工具
+# optional
 pip install -r requirements-dev.txt
-```
 
-**Python 版本**: 3.11+ （已在 Python 3.12.9 测试通过）
-
-### 2. 快速验证
-
-```bash
-# 运行全部测试（34 个测试用例）
 pytest -q
-
-# 只运行核心功能测试
-pytest tests/test_semantics_v2.py tests/test_io_reader.py -v
 ```
 
-### 3. 一分钟体验
-
-#### 方式一：交互式 CLI（推荐新手）
+### Interactive CLI
 
 ```bash
 python scripts/spectrum_cli.py
 ```
 
-选择任务一、二、三，按提示操作即可生成频谱。
-
-#### 方式二：批处理 CLI（推荐自动化）
+### Batch CLI examples
 
 ```bash
-# 任务一：合成干扰频谱
 python scripts/spectrum_batch.py compose \
   --jammer single_tone:500:25 \
   --jammer sweep:1500:20 \
   -o data/composed.npz \
   --plot data/composed.png
 
-# 任务二：拼接真实 IQ 数据（需先准备 .bin 文件）
 python scripts/spectrum_batch.py stitch \
   --input-dir data_segment \
   --pattern "*.bin" \
@@ -126,527 +87,34 @@ python scripts/spectrum_batch.py stitch \
   -o data/stitched.npz \
   --plot data/stitched.png
 
-# 任务三：从语义参数恢复频谱
 python scripts/spectrum_batch.py decode-v2 \
   --input data_semantic/semantic_case01.json \
   -o data/recovered.npz
 ```
 
-#### 方式三：Python 脚本（推荐开发者）
+### Library usage (sketch)
 
 ```python
-from electromagnetic_state.signal.spectrum_composer import SpectrumComposerConfig, add_jammer, compose_spectrum
+from electromagnetic_state.signal.spectrum_composer import (
+    SpectrumComposerConfig, add_jammer, compose_spectrum,
+)
 import numpy as np
 
-# 创建配置
 cfg = SpectrumComposerConfig(
     freq_min_mhz=30.0,
     freq_max_mhz=2500.0,
     resolution_mhz=1.0,
     noise_floor_db=-100.0,
 )
-
-# 添加干扰
 add_jammer(cfg, "single_tone", 500.0, 25.0)
 add_jammer(cfg, "sweep", 1500.0, 20.0)
-
-# 生成频谱
 rng = np.random.default_rng(42)
 freq_mhz, power_db = compose_spectrum(cfg, rng=rng)
-
-# 保存结果
 np.savez("data/my_spectrum.npz", freq_mhz=freq_mhz, power_db=power_db)
-print(f"✓ 生成 {len(freq_mhz)} 个频点的频谱")
 ```
 
----
+Ensure `src/` is on `PYTHONPATH` or install the package via `pyproject.toml` as documented in `docs/`.
 
-## 使用方式总览
+## Status / limitations
 
-本工程提供两类入口：
-
-- 顶层 CLI（推荐给使用者）：
-  - `spectrum_cli.py` – 交互式 CLI（任务一/二/三）；
-  - `spectrum_batch.py` – 批处理 CLI（compose / stitch / decode / decode‑v2）。
-- Python 模块 / pipeline（推荐给开发者与集成方）：
-  - `src/pipeline/*.py` – 可通过 `python -m electromagnetic_state.pipeline.xxx` 调用；
-  - 直接导入 `electromagnetic_state.signal` / `electromagnetic_state.semantics` / `electromagnetic_state.io` 下的函数。
-
-下面分 CLI 与 Pipeline 两种方式给出典型用法。
-
-### 3. 交互式 CLI（推荐快速体验）
-
-```bash
-python scripts/spectrum_cli.py
-```
-
-主菜单：
-
-- 任务一：干扰功率谱合成（配置频段、底噪、干扰类型/Fc/JNR，生成并保存 npz + PNG）；
-- 任务二：频谱分段拼接（加载多个频谱 npz 或分段文件，选择拼接模式，生成宽带谱）；
-- 任务三：语义参数频谱恢复（从 JSON 加载语义参数，恢复功率谱并与参考谱对比）。
-
-> 详细交互步骤、字段说明请见 `scripts/spectrum_cli.py` 代码或归档文档 [`archive/cli_docs/USAGE_CLI.md`](archive/cli_docs/USAGE_CLI.md)。
-
-### 4. 批处理 CLI：`spectrum_batch.py`
-
-#### 4.1 任务一：干扰功率谱合成（compose）
-
-```bash
-# 组合两个干扰，生成宽带频谱并保存 npz
-python scripts/spectrum_batch.py compose \
-  --jammer single_tone:500:20 \
-  --jammer sweep:1200:18 \
-  -o data/composed.npz \
-  --plot data/composed.png
-```
-
-#### 4.2 任务二：频谱分段拼接（stitch）
-
-```bash
-python scripts/spectrum_batch.py stitch \
-  --input-dir data_segment \
-  --pattern "*.bin" \
-  --dtype int16 \
-  --mode max \
-  --segment-fft-size 512 \
-  --time-agg-mode mean \
-  -o data/stitched_30_2500.npz \
-  --plot data/stitched_30_2500.png
-```
-
-其中：
-
-- `input-dir` 指向包含多个 200 MHz 分段 `.bin` 文件的目录；
-- 文件名支持两类命名：
-  - 完整命名：`single_130MHz_204.8MHz_xxx.bin`（可从文件名自动推断中心频率与采样率/带宽）；
-  - 简化命名：`130MHz.bin`（仅中心频率，采样率可用 `--sample-rate` 指定；默认 204.8e6 Hz）。
-- `segment-fft-size` 为分段 FFT 的 NFFT（推荐用于大样本 `.bin`，避免“超大 FFT + 绘图卡顿”）；设置为 `0` 可禁用分段 FFT 并退回单次 FFT（使用 `--fft-size`）。
-
-#### 4.3 任务三：语义恢复（v1 / v2）
-
-**v1（兼容旧格式，单区域或多区域自动判断）**：
-
-```bash
-python scripts/spectrum_batch.py decode \
-  --input data/demo_semantic_v1.json \
-  -o data/recovered_v1.npz
-```
-
-内部会使用 `decode_semantic_auto`：
-
-- 若 `pos_edge` 为空/单个 → 使用 v1 `decode_semantic`；
-- 若 `pos_edge` 有多个 → 使用 `decode_semantic_multi_region` 支持多区域。
-
-**v2（推荐的多区域语义编码格式）**：
-
-```bash
-python scripts/spectrum_batch.py decode-v2 \
-  --input data_semantic/semantic_case01.json \
-  -o data/recovered_v2_case01.npz
-```
-
-v2 JSON 结构参见 `docs/semantic_encoding_requirements.md`：  
-`freq_min_mhz/freq_max_mhz/num_bins/noise_floor_db/jammer_regions`。
-
----
-
-## Pipeline 示例（Python 模块方式）
-
-以下示例假定你在工程根目录，且环境中已能导入 `electromagnetic_state.*`。
-
-### 1. 任务一：干扰功率谱合成
-
-```python
-from electromagnetic_state.signal.spectrum_composer import SpectrumComposerConfig, add_jammer, compose_spectrum
-import numpy as np
-
-cfg = SpectrumComposerConfig(
-    freq_min_mhz=30.0,
-    freq_max_mhz=2500.0,
-    resolution_mhz=1.0,
-    noise_floor_db=-120.0,
-)
-
-add_jammer(cfg, "single_tone", 500.0, 20.0)
-add_jammer(cfg, "sweep", 1800.0, 22.0)
-
-freq_mhz, power_db = compose_spectrum(cfg, rng=np.random.default_rng(42))
-np.savez("data/task1_composed.npz", freq_mhz=freq_mhz, power_db=power_db)
-```
-
-或使用 pipeline CLI：
-
-```bash
-python -m electromagnetic_state.pipeline.compose_spectrum \
-  --jammer single_tone:500:20 \
-  --jammer sweep:1800:22 \
-  --output-npz data/task1_composed.npz \
-  --output-png data/task1_composed.png
-```
-
-### 2. 任务二：频谱分段拼接（真实 .bin 数据）
-
-```python
-from pathlib import Path
-from electromagnetic_state.io.reader import BinDataType
-from electromagnetic_state.signal.stitcher import StitchMode
-from electromagnetic_state.pipeline.stitch.stitch_real_data import stitch_from_bin_directory
-
-stitched, segments = stitch_from_bin_directory(
-    directory=Path("data_segment"),
-    pattern="*.bin",
-    bin_dtype=BinDataType.INT16,
-    mode=StitchMode.MAX,
-    # 推荐：对大样本 .bin 使用分段 FFT，并固定 NFFT（例如 512）
-    segment_fft_size=512,
-    time_agg_mode="mean",
-)
-
-np.savez(
-    "data/task2_stitched.npz",
-    freq_mhz=stitched.freq_mhz,
-    power_db=stitched.power_db,
-    coverage_map=stitched.coverage_map,
-)
-```
-
-### 3. 任务三：语义参数频谱恢复与评估
-
-#### 3.1 v1：`SemanticParams` + `decode_semantic`
-
-```python
-import numpy as np
-from electromagnetic_state.core.schemas import SemanticParams
-from electromagnetic_state.semantics.decode import decode_semantic
-
-params = SemanticParams(
-    yonghu=1,
-    youwu=1,
-    menxian=-120.0,
-    pos_edge=[500],
-    neg_edge=[700],
-    start=470,
-    end=1470,
-    fenbianlv=2471,
-    sinr=np.array([15.0]),
-    freq_min_mhz=30.0,
-    freq_max_mhz=2500.0,
-)
-
-power_db = decode_semantic(params)
-```
-
-评估（v1 自动模式）：
-
-```bash
-python -m electromagnetic_state.pipeline.semantic_eval \
-  --reference data/stitched_30_2500.npz \
-  --semantic data/demo_semantic_v1.json \
-  --report data/semantic_eval_v1.json
-```
-
-#### 3.2 v2：`SemanticEncodingV2` + `decode_semantic_v2`
-
-```python
-import numpy as np
-from electromagnetic_state.core.schemas import SemanticEncodingV2, JammerRegionV2
-from electromagnetic_state.semantics.decode_v2 import decode_semantic_v2
-
-params_v2 = SemanticEncodingV2(
-    freq_min_mhz=30.0,
-    freq_max_mhz=2500.0,
-    num_bins=2471,
-    noise_floor_db=-80.0,
-    jammer_regions=[
-        JammerRegionV2(start_bin=50, end_bin=90, jnr_db=25.0),
-        JammerRegionV2(start_bin=470, end_bin=490, jnr_db=20.0),
-    ],
-)
-
-power_db_v2 = decode_semantic_v2(params_v2)
-```
-
-评估（v2）：
-
-```bash
-python -m electromagnetic_state.pipeline.semantic_eval_v2 \
-  --reference data/stitched_30_2500.npz \
-  --semantic data_semantic/semantic_case01.json \
-  --report data/semantic_eval_v2_case01.json
-```
-
----
-
-## 📚 详细文档
-
-### 活跃文档
-
-- **[语义编码规范](docs/semantic_encoding_requirements.md)** - v2 格式标准定义
-- **[数据格式说明](docs/TASK2_DATA_FORMATS.md)** - IQ 数据与频谱格式
-- **[原始需求文档](docs/频谱语义化表征及频谱恢复.md)** - 项目背景与技术要求
-
-### 归档文档（历史参考）
-
-- **[Bug 修复记录](archive/reports/bug_fixes/BUG_FIX_SUMMARY.md)** - 详细调试过程与修复方案
-- **[文档准确性审计](archive/reports/documentation/DOCUMENTATION_AUDIT_REPORT.md)** - 文档错误识别与修正报告
-- **[旧版 CLI 使用指南](archive/cli_docs/USAGE_GUIDE.md)** - Python/Pipeline 详细使用方法（已过时）
-- **[旧版 CLI 文档](archive/cli_docs/)** - 历史 CLI 工具文档
-
----
-
-## 🔧 技术参数
-
-### 频谱配置
-
-| 参数                              | 值      | 说明               |
-| --------------------------------- | ------- | ------------------ |
-| `DEFAULT_SEMANTIC_FREQ_MIN_MHZ`   | 30.0    | 最小频率           |
-| `DEFAULT_SEMANTIC_FREQ_MAX_MHZ`   | 2500.0  | 最大频率           |
-| `DEFAULT_SEMANTIC_NUM_BINS`       | 2471    | 频点数量           |
-| `DEFAULT_SEMANTIC_NOISE_FLOOR_DB` | -60.0   | 默认噪声底         |
-| 频率分辨率                        | 1.0 MHz | (2500-30)/(2471-1) |
-
-### 窗口中心（13 个）
-
-```python
-DEFAULT_WINDOW_CENTERS_MHZ = (
-    130, 330, 400, 600, 800, 1000, 1200,
-    1400, 1600, 1800, 2000, 2200, 2400
-)
-```
-
-每个窗口半带宽: **±100 MHz**
-
-### 支持的干扰类型
-
-1. **noise_fm** - 噪声调频干扰
-2. **single_tone** - 单音干扰
-3. **multi_tone** - 多音干扰（3-20 个音调）
-4. **comb** - 梳状谱干扰
-5. **partial_band_noise** - 部分带宽噪声干扰
-6. **sweep** - 扫频干扰
-
----
-
-## 📊 项目状态
-
-### ✅ 最近完成
-
-- **[2025-11-26] 文档归档整理** - 清理项目结构，归档过时文档
-  - 创建 `archive/` 归档目录结构（reports, cli_docs）
-  - 归档 14 个历史文档到分类目录
-  - 根目录保持整洁，仅保留 README.md
-  - 更新所有文档链接指向正确位置
-- **[2025-11] 项目架构重构** - 完成 4 层模块化架构迁移
-  - Layer 0: `core/` (schemas, config)
-  - Layer 1: `io/`, `signal/`, `semantics/`
-  - Layer 2: `pipeline/` (compose, stitch, semantic, utils)
-  - Layer 3: `scripts/` (spectrum_cli.py, spectrum_batch.py)
-- **[2025-11] 全局变量清理** - 删除 10 个未使用的手动配置文件
-  - 保留 10 个程序生成的语义测试用例 (`semantic_case01.json` ~ `semantic_case10.json`)
-- **[2025-11] Bug 修复与文档准确性审计** - 完成所有测试通过和文档校正
-  - 修复噪声波动参数 (commit `7fc78d9`)
-  - 完成 14 处文档错误识别与修正
-  - 生成详细的审计报告和修复记录
-
-### 📋 测试状态
-
-- **总测试数**: 34 个
-- **通过率**: 100% ✅ 所有测试通过
-- **最近修复**: 噪声波动参数优化 (commit `7fc78d9`) - `test_high_frequency_jammer` 现已通过
-- **代码质量**: 4 层架构清晰，无已知 Bug
-
-### 🔄 当前分支
-
-- **主分支**: `master`
-- **最新提交**: `6a8f738` - docs: 归档过时文档到 archive/ 目录
-- **远程仓库**: [GitHub](https://github.com/AsaqeLee/ElectromagneticStateSpectrumSemanticizationProject)
-- **状态**: ✅ 开发完成，架构重构已合并，所有测试通过
-
----
-
-## 🛠️ 开发者指南
-
-### 模块依赖关系
-
-```
-CLI (Layer 3)
-  ↓
-Pipeline (Layer 2)
-  ↓
-Signal/Semantics/IO (Layer 1)
-  ↓
-Core (Layer 0)
-```
-
-### 推荐 API
-
-**频谱合成**:
-
-```python
-from electromagnetic_state.signal.spectrum_composer import compose_spectrum, add_jammer
-```
-
-**频谱拼接**:
-
-```python
-from electromagnetic_state.signal.stitcher import stitch_segments
-from electromagnetic_state.pipeline.stitch.stitch_real_data import stitch_from_bin_directory
-```
-
-**语义解码**:
-
-```python
-from electromagnetic_state.semantics.decode import decode_semantic          # v1 单区域
-from electromagnetic_state.semantics.decode_multi import decode_semantic_auto  # v1 自动模式
-from electromagnetic_state.semantics.decode_v2 import decode_semantic_v2      # v2 标准格式
-```
-
-**数据 IO**:
-
-```python
-from electromagnetic_state.io.reader import load_iq_file, load_bin_segments
-```
-
-### 扩展开发
-
-**新增干扰类型**:
-
-1. 在 `src/signal/jammers.py` 添加生成函数 `xxx_jammer()`
-2. 注册到 `JAMMER_REGISTRY` 字典
-3. 更新 CLI 参数解析器
-
-**新增语义编码策略**:
-
-1. 在 `src/semantics/` 实现编码/解码函数
-2. 在 `src/pipeline/semantic/` 创建评估流程
-3. 添加对应的单元测试
-
----
-
-## ❓ 常见问题
-
-### Q1: 如何选择语义编码版本（v1 vs v2）？
-
-**v1 格式** (`SemanticParams`):
-
-- ✅ 兼容现有数据
-- ✅ 支持单区域/多区域自动识别
-- ⚠️ 结构相对复杂
-
-**v2 格式** (`SemanticEncodingV2`) - **推荐**:
-
-- ✅ 标准化多干扰区域编码
-- ✅ 结构清晰，易于扩展
-- ✅ 10 个测试用例参考 (`data_semantic/semantic_case*.json`)
-
-### Q2: 频谱拼接模式如何选择？
-
-| 模式      | 适用场景           | 优势             | 劣势             |
-| --------- | ------------------ | ---------------- | ---------------- |
-| **MAX**   | 干扰检测、峰值分析 | 保留所有干扰峰值 | 可能放大噪声     |
-| **MEAN**  | 噪声抑制、平均功率 | 降低随机噪声影响 | 可能掩盖瞬时干扰 |
-| **FIRST** | 优先级分段处理     | 简单快速         | 忽略后续分段信息 |
-
-### Q3: 为什么默认频率范围是 30-2500 MHz？
-
-这是基于项目需求和实际硬件能力设定的：
-
-- **30 MHz**: 短波上限，避开高频噪声
-- **2500 MHz**: 覆盖主要通信频段（包括 L/S 波段）
-- **可自定义**: 通过配置参数调整 `freq_min_mhz` 和 `freq_max_mhz`
-
-### Q4: 如何提高语义恢复精度？
-
-1. **准确的边缘检测**: 确保 `pos_edge` 和 `neg_edge` 索引精确
-2. **合理的 JNR 值**: 通常设置为 15-30 dB
-3. **使用 v2 格式**: 更清晰的多区域定义
-4. **验证频点数**: `num_bins` 必须与原始频谱一致 (2471)
-
-### Q5: 测试失败如何排查？
-
-```bash
-# 1. 检查 Python 版本
-python --version  # 需要 3.11+
-
-# 2. 运行详细测试
-pytest -v --tb=short
-
-# 3. 只测试核心功能
-pytest tests/test_semantics_v2.py -v
-
-# 4. 查看失败详情
-pytest tests/test_semantics_v2.py -vv --tb=long
-```
-
-### Q6: 如何处理大量 IQ 文件？
-
-**批量拼接示例**:
-
-```bash
-# 方法一：使用 CLI
-python scripts/spectrum_batch.py stitch \
-  --input-dir data_segment \
-  --pattern "*.bin" \
-  --dtype int16 \
-  --mode max \
-  -o data/batch_stitched.npz
-
-# 方法二：Python 脚本
-from electromagnetic_state.io.reader import load_bin_segments, BinDataType
-segments = load_bin_segments("data_segment", "*.bin", BinDataType.INT16)
-print(f"加载了 {len(segments)} 个分段")
-```
-
----
-
-## 📖 参考资源
-
-### 核心文档
-
-- **[语义编码规范 v2](docs/semantic_encoding_requirements.md)** - `SemanticEncodingV2` 格式标准
-- **[数据格式说明](docs/TASK2_DATA_FORMATS.md)** - IQ 数据与频谱格式详解
-- **[原始需求文档](docs/频谱语义化表征及频谱恢复.md)** - 项目背景与技术要求
-
-### 归档文档
-
-- **[Bug 修复记录](archive/reports/bug_fixes/BUG_FIX_SUMMARY.md)** - 详细调试过程与修复方案
-- **[文档准确性审计](archive/reports/documentation/DOCUMENTATION_AUDIT_REPORT.md)** - 文档错误识别与修正报告
-- **[旧版使用指南](archive/cli_docs/USAGE_GUIDE.md)** - 历史 CLI 工具使用方法
-
-### 技术规范
-
-- **[语义编码规范 v2](docs/semantic_encoding_requirements.md)** - `SemanticEncodingV2` 格式标准
-- **[原始需求文档](docs/频谱语义化表征及频谱恢复.md)** - 项目背景与技术要求
-
-### 示例配置
-
-- `data_semantic/semantic_case01.json` ~ `semantic_case10.json` - 10 个语义编码测试用例
-- `data/cli_results/jammer_config.json` - 干扰源配置示例
-
----
-
-## 📬 联系与支持
-
-如遇到问题或有改进建议，请：
-
-1. 查阅 [详细文档](#📚-详细文档) 章节
-2. 检查 [常见问题](#❓-常见问题) 章节
-3. 查看项目 [GitHub Issues](https://github.com/AsaqeLee/ElectromagneticStateSpectrumSemanticizationProject/issues) 或提交新问题
-
----
-
-## 📄 许可证
-
-本项目仅供**学习和研究**使用。
-
----
-
-<div align="center">
-
-**🔬 Electromagnetic State Spectrum Semanticization Project**
-
-_电磁频谱智能分析 · 语义化编码 · 高效恢复_
-
-</div>
+Research / coursework-oriented engineering code. Accuracy claims depend on configuration and input quality. Large IQ corpora are not necessarily shipped with the repository; prepare local data directories as needed. No LICENSE file is present in the repository root at the time of this README rewrite.
