@@ -117,4 +117,8 @@ Ensure `src/` is on `PYTHONPATH` or install the package via `pyproject.toml` as 
 
 ## Status / limitations
 
-Research / coursework-oriented engineering code. Accuracy claims depend on configuration and input quality. Large IQ corpora are not necessarily shipped with the repository; prepare local data directories as needed. No LICENSE file is present in the repository root at the time of this README rewrite.
+Research / coursework-oriented engineering code. Accuracy claims depend on configuration and input quality. Large IQ corpora are not necessarily shipped with the repository; prepare local data directories as needed.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
