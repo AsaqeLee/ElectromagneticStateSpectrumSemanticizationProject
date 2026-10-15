@@ -1,5 +1,5 @@
 numpy>=1.20,<1.26
-scipy>=1.6,<1.11
+scipy>=1.6,<1.16
 h5py>=3.7,<3.12
 matplotlib>=3.5,<3.8
 pytest>=7.4,<9
