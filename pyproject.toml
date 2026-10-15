@@ -16,7 +16,7 @@ dependencies = [
   "scipy>=1.6,<1.11",
   "matplotlib>=3.5,<3.8",
   "pyyaml>=5.3",
-  "h5py>=3.7,<3.12",
+  "h5py>=3.7,<3.17",
 ]
 
 [project.optional-dependencies]
