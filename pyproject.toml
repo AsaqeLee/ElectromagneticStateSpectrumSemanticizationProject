@@ -21,7 +21,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-  "pytest<9",
+  "pytest<10",
   "mypy",
   "ruff",
   "black<25",
